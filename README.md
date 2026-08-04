@@ -142,6 +142,23 @@ sensíveis às premissas — não são gatilho.
 Novas flags: `--strict-criteria`, `--no-mktcap-filter`. Novos envs opcionais: `SELIC`
 (ex.: `15`), `INSIDER_CHECK` (`0` desliga).
 
+## Agenda, dividendos e tese por IA (opcional)
+
+Para os papéis do relatório, o app busca (via `yfinance`, best-effort — "n/d" quando não
+houver): **data do próximo resultado** e **data ex-dividendo** (marcada como *última* ou
+*próxima*), além do **DY** que já vinha dos fundamentos.
+
+Para os **aprovados** (fundamentos + rompimento), gera uma **tese de investimento por IA**
+(Gemini Flash, free tier) **ancorada exclusivamente nos números que o app coletou** — o
+prompt proíbe usar conhecimento externo, inventar fatos/notícias/preço-alvo e recomendar.
+É um resumo automático, pode conter erros e **não é recomendação**.
+
+Ativação (só a tese exige chave): env `GEMINI_API_KEY` (secret). Opcionais: `GEMINI_MODEL`
+(default `gemini-2.0-flash`), `AI_MAX_CALLS` (default 40, teto de chamadas/execução p/
+respeitar a cota). Sem a chave, as teses ficam vazias e o resto roda igual. Há cache em
+`reports/cache_tese.json` (não repete o mesmo papel no mesmo dia). Desligue tudo com
+`--no-enrich`. A agenda e as teses aparecem no corpo do e-mail e na planilha.
+
 ## Ajustes comuns
 
 - Mudar pesos do Investment Score → `scoring.py` (dict `W`).

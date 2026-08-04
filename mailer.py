@@ -136,6 +136,43 @@ def _teto_table(df: pd.DataFrame) -> str:
     return f"<table>{head}{''.join(rows)}</table>"
 
 
+def _agenda_table(df: pd.DataFrame) -> str:
+    def val(x):
+        return "—" if (x is None or (isinstance(x, float) and pd.isna(x))
+                       or str(x) in ("", "n/d")) else str(x)
+    def num(x, d=1):
+        try:
+            return f"{float(x):.{d}f}"
+        except Exception:
+            return "—"
+    head = ("<tr><th>Ativo</th><th>DY %</th><th>Próx. resultado</th>"
+            "<th>Ex-dividendo</th></tr>")
+    rows = []
+    for _, r in df.iterrows():
+        ex = val(r.get("ex_dividendo"))
+        tipo = str(r.get("ex_tipo") or "")
+        if ex != "—" and tipo:
+            ex = f"{ex} ({tipo})"
+        rows.append(f"<tr><td><b>{r.name}</b></td><td>{num(r.get('dy'))}</td>"
+                    f"<td>{val(r.get('prox_resultado'))}</td><td>{ex}</td></tr>")
+    return f"<table>{head}{''.join(rows)}</table>"
+
+
+def _teses_block(df: pd.DataFrame) -> str:
+    itens = []
+    for _, r in df.iterrows():
+        t = str(r.get("tese_ia") or "").strip()
+        if t:
+            itens.append(f'<p style="margin:8px 0"><b>{r.name}</b> — {t}</p>')
+    if not itens:
+        return ""
+    return (
+        '<h2 style="font-size:15px;margin:20px 0 6px">Teses (geradas por IA)</h2>'
+        '<p class="sub" style="margin:0 0 8px">Resumo automático ancorado apenas nos '
+        'números deste screener (aprovados = fundamentos + rompimento). Pode conter erros; '
+        '<b>não é recomendação</b>.</p>' + "".join(itens))
+
+
 def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict) -> str:
     if selecionados is None or selecionados.empty:
         body = '<p class="empty">Nenhum papel passou no corte fundamentalista hoje.</p>'
@@ -149,6 +186,10 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict) -> str:
                 "<th>Critérios</th><th>Oport. gráfica</th><th>Tendência</th><th>Preço</th>"
                 "<th>Teto médio</th></tr>")
         rows = "".join(_fmt_row(r) for _, r in selecionados.iterrows())
+        agenda = ""
+        if "prox_resultado" in selecionados.columns or "ex_dividendo" in selecionados.columns:
+            agenda = ('<h2 style="font-size:15px;margin:20px 0 6px">Agenda &amp; '
+                      'dividendos</h2>' + _agenda_table(selecionados))
         body = (f"<table>{head}{rows}</table>"
                 f'<h2 style="font-size:15px;margin:20px 0 6px">Preços-teto (R$)</h2>'
                 f'<p class="sub" style="margin:0 0 8px">Cinco métodos — Bazin (DY 6%), '
@@ -156,7 +197,9 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict) -> str:
                 f'<b>Média</b> e a <b>Mediana</b> deles (a mediana é mais robusta a um '
                 f'método que dispara). *Upside vs. mediana. Premissas: k = Selic, g '
                 f'conservador. Estimativas sensíveis às premissas — não são gatilho.</p>'
-                f"{_teto_table(selecionados)}")
+                f"{_teto_table(selecionados)}"
+                f"{agenda}"
+                f"{_teses_block(selecionados)}")
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{_CSS}</style></head>
 <body><div class="card">
 <h1>Screener B3 — {hoje}</h1>

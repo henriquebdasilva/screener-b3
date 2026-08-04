@@ -30,7 +30,7 @@ from breakout import detect_breakout
 def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         vol_mult=1.5, require_trend=True, require_volume=True,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
-        send_email=True, strict_criteria=False, mktcap_filter=True):
+        send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
@@ -121,8 +121,30 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     df["oportunidade_grafica"] = np.where(
         df["breakout"] & (strat.astype(str) != ""), strat.astype(str), "Não")
 
-    os.makedirs(outdir, exist_ok=True)
     hoje = dt.date.today().isoformat()
+    # ---- enriquecimento: agenda (selecionados) + tese IA (aprovados) ----
+    df["prox_resultado"] = "n/d"
+    df["ex_dividendo"] = "n/d"
+    df["ex_tipo"] = ""
+    df["tese_ia"] = ""
+    if enrich:
+        from enrich import get_events, generate_theses
+        sel_idx = list(df.index[df["fund_ok"]])
+        for tk in sel_idx:
+            try:
+                ev = get_events(tk)
+                df.at[tk, "prox_resultado"] = ev.get("prox_resultado") or "n/d"
+                df.at[tk, "ex_dividendo"] = ev.get("ex_dividendo") or "n/d"
+                df.at[tk, "ex_tipo"] = ev.get("ex_tipo") or ""
+            except Exception as e:
+                print(f"  [agenda] {tk}: {e}")
+            time.sleep(0.2)
+        aprov = df[df["aprovado"]]
+        teses = generate_theses(aprov, hoje, outdir)
+        for tk, txt in teses.items():
+            df.at[tk, "tese_ia"] = txt
+
+    os.makedirs(outdir, exist_ok=True)
 
     cols = ["origem", "setor", "investment", "quality", "value", "safety", "dividend",
             "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
@@ -131,7 +153,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "market_cap", "pl", "pvp", "dy", "roe", "roic", "mrg_liq", "div_liq_ebitda",
             "liq_corr", "div_patrim", "peg", "close", "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_medio", "teto_mediana",
-            "teto_upside_pct", "teto_upside_media_pct", "strategy",
+            "teto_upside_pct", "teto_upside_media_pct", "prox_resultado",
+            "ex_dividendo", "ex_tipo", "tese_ia", "strategy",
             "trend", "breakout_level", "pct_to_level", "dist_52w_high_pct",
             "fund_ok", "breakout", "aprovado", "note"]
     cols = [c for c in cols if c in df.columns]
@@ -229,6 +252,8 @@ def parse_args():
                    help="exige TODOS os critérios do checklist (além do Investment Score)")
     p.add_argument("--no-mktcap-filter", action="store_true",
                    help="não aplicar o piso de market cap (>= R$ 300 mi)")
+    p.add_argument("--no-enrich", action="store_true",
+                   help="não buscar agenda (resultado/ex-div) nem gerar tese por IA")
     p.add_argument("--outdir", default="reports")
     return p.parse_args()
 
@@ -239,4 +264,5 @@ if __name__ == "__main__":
         lookback=a.lookback, vol_mult=a.vol_mult, require_trend=not a.no_trend,
         require_volume=not a.no_volume, require_contraction=a.require_contraction,
         sleep=a.sleep, outdir=a.outdir, limit=a.limit, send_email=not a.no_email,
-        strict_criteria=a.strict_criteria, mktcap_filter=not a.no_mktcap_filter)
+        strict_criteria=a.strict_criteria, mktcap_filter=not a.no_mktcap_filter,
+        enrich=not a.no_enrich)
