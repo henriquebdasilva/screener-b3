@@ -30,19 +30,24 @@ from breakout import detect_breakout
 def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         vol_mult=1.5, require_trend=True, require_volume=True,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
-        send_email=True):
+        send_email=True, strict_criteria=False, mktcap_filter=True):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
     if limit:
         items = items[:limit]
-    print(f"Universo: {len(items)} tickers ({universe}).")
 
-    funds, breaks, origem = [], {}, {}
+    from datafeed import get_selic, get_insider_sells
+    selic = get_selic()
+    print(f"Universo: {len(items)} tickers ({universe}). Selic usada: {selic:.2f}%")
+
+    funds, breaks, origem, mcap, insider = [], {}, {}, {}, {}
     for i, (tk, orig) in enumerate(items, 1):
         origem[tk] = "+".join(orig)
         try:
-            funds.append(get_fundamentals(tk))
+            f = get_fundamentals(tk)
+            funds.append(f)
+            mcap[tk] = f.market_cap
         except Exception as e:
             print(f"  [fund] {tk}: {e}")
         try:
@@ -54,6 +59,10 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             )
         except Exception as e:
             print(f"  [preço] {tk}: {e}")
+        try:
+            insider[tk] = get_insider_sells(tk)
+        except Exception:
+            insider[tk] = None
         if i % 10 == 0:
             print(f"  ...{i}/{len(items)}")
         time.sleep(sleep)
@@ -70,13 +79,41 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     df = scores.join(bdf, how="left")
     df.insert(0, "origem", pd.Series(origem))
 
-    # corte fundamentalista
+    # ---- market cap, checklist de critérios e preços-teto ----
+    from criteria import sector_means, evaluate
+    from pricing import compute_ceilings
+    df["market_cap"] = pd.Series(mcap)
+    smeans = sector_means(df)
+    fin_map = {f.ticker: f.is_financial() for f in funds}
+
+    chk_rows, ceil_rows = {}, {}
+    for tk in df.index:
+        row = df.loc[tk]
+        ch = evaluate(row, smeans, selic, market_cap=mcap.get(tk),
+                      insider_sell_relevante=insider.get(tk),
+                      is_financial=fin_map.get(tk, False))
+        chk_rows[tk] = ch.as_dict()
+        cc = compute_ceilings(row.get("close"), row.get("pl"), row.get("pvp"),
+                              row.get("dy"), row.get("cresc_5a"), selic_pct=selic)
+        ceil_rows[tk] = {"teto_bazin": cc.bazin, "teto_graham": cc.graham,
+                         "teto_gordon": cc.gordon, "teto_dcf": cc.dcf,
+                         "teto_lynch": cc.lynch, "teto_medio": cc.media,
+                         "teto_mediana": cc.mediana, "teto_upside_pct": cc.upside_pct,
+                         "teto_upside_media_pct": cc.upside_media_pct}
+    df = df.join(pd.DataFrame(chk_rows).T).join(pd.DataFrame(ceil_rows).T)
+
+    # corte fundamentalista (Investment Score) + piso de market cap (>= R$300 mi)
     if min_invest is not None:
         fund_ok = df["investment"] >= float(min_invest)
     else:
         thr = df["investment"].quantile(1 - top_quantile)
         fund_ok = df["investment"] >= thr
-    df["fund_ok"] = fund_ok.fillna(False)
+    fund_ok = fund_ok.fillna(False)
+    if mktcap_filter:
+        fund_ok = fund_ok & (df["marketcap_ok"] != False)   # noqa: E712 (mantém n/d)
+    if strict_criteria:
+        fund_ok = fund_ok & (df["passa_checklist"] == True)  # noqa: E712
+    df["fund_ok"] = fund_ok
     df["breakout"] = df["signal"].fillna(False).astype(bool)
     df["aprovado"] = df["fund_ok"] & df["breakout"]
     # FLAG de oportunidade gráfica: mostra o papel de qualquer forma e sinaliza o rompimento
@@ -88,9 +125,14 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     hoje = dt.date.today().isoformat()
 
     cols = ["origem", "setor", "investment", "quality", "value", "safety", "dividend",
-            "rank_invest", "oportunidade_grafica", "pl", "pvp", "dy", "roe", "roic",
-            "div_liq_ebitda", "liq_corr", "div_patrim", "peg", "close", "strategy",
-            "trend", "breakout_level", "pct_to_level", "vol_ratio", "dist_52w_high_pct",
+            "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
+            "passa_checklist", "roe_ge_selic", "roe_ge_setor", "roic_ge_setor",
+            "margem_ge_15", "cagr_ge_setor", "divida_ok", "marketcap_ok", "insider_ok",
+            "market_cap", "pl", "pvp", "dy", "roe", "roic", "mrg_liq", "div_liq_ebitda",
+            "liq_corr", "div_patrim", "peg", "close", "teto_bazin", "teto_gordon",
+            "teto_dcf", "teto_graham", "teto_lynch", "teto_medio", "teto_mediana",
+            "teto_upside_pct", "teto_upside_media_pct", "strategy",
+            "trend", "breakout_level", "pct_to_level", "dist_52w_high_pct",
             "fund_ok", "breakout", "aprovado", "note"]
     cols = [c for c in cols if c in df.columns]
     full = df[cols].round(2)
@@ -183,6 +225,10 @@ def parse_args():
     p.add_argument("--sleep", type=float, default=0.4)
     p.add_argument("--limit", type=int, default=None, help="varre só os N primeiros (debug)")
     p.add_argument("--no-email", action="store_true", help="não enviar e-mail")
+    p.add_argument("--strict-criteria", action="store_true",
+                   help="exige TODOS os critérios do checklist (além do Investment Score)")
+    p.add_argument("--no-mktcap-filter", action="store_true",
+                   help="não aplicar o piso de market cap (>= R$ 300 mi)")
     p.add_argument("--outdir", default="reports")
     return p.parse_args()
 
@@ -192,4 +238,5 @@ if __name__ == "__main__":
     run(universe=a.universe, top_quantile=a.top_quantile, min_invest=a.min_invest,
         lookback=a.lookback, vol_mult=a.vol_mult, require_trend=not a.no_trend,
         require_volume=not a.no_volume, require_contraction=a.require_contraction,
-        sleep=a.sleep, outdir=a.outdir, limit=a.limit, send_email=not a.no_email)
+        sleep=a.sleep, outdir=a.outdir, limit=a.limit, send_email=not a.no_email,
+        strict_criteria=a.strict_criteria, mktcap_filter=not a.no_mktcap_filter)

@@ -112,6 +112,36 @@ python screener.py --universe both
   não se aplicam → o Safety deles usa o que houver; o Investment re-normaliza os pesos.
 - **Small caps** têm dados mais ruidosos (lucros voláteis → mais PEG "n/m", menor liquidez).
 
+## Critérios fundamentalistas (checklist) + preços-teto
+
+Além do Investment Score, cada papel passa por um **checklist** (colunas no CSV/planilha,
+valores Sim/Não/n/d):
+
+1. **ROE ≥ Selic** (Selic vinda da API do Banco Central — série 432; override por env `SELIC`).
+2. **ROE ≥ média do setor**; 3. **ROIC ≥ média do setor**; 5. **CAGR 5a ≥ média do setor**
+   (média do setor calculada **dentro do universo varrido** — limitação honesta).
+4. **Margem líquida ≥ 15%** (n/a p/ bancos/seguros).
+6. **Dív.Líq/EBITDA < 3 e ≤ média do setor** (n/a p/ bancos/seguros).
+7. **Market cap ≥ R$ 300 mi** (piso; papéis abaixo saem da seleção, salvo `--no-mktcap-filter`).
+8. **Sem venda expressiva de insiders no último ano** — raspagem *best-effort* da página de
+   insiders do Fundamentus; frágil, então em dúvida vira `n/d` e não pesa. Desligue com env
+   `INSIDER_CHECK=0`.
+
+`criterios_ok / criterios_aplicaveis` conta quantos foram cumpridos. Por padrão o checklist
+é **informativo** (não elimina, além do piso de market cap). Para exigir **todos** os
+critérios aplicáveis, rode com **`--strict-criteria`**.
+
+**Preços-teto** (no corpo do e-mail e na planilha), por papel: **Bazin** (DY 6%),
+**Gordon** (perpetuidade de dividendos), **DCF** (perpetuidade de lucros), **Graham**
+(√(22,5·LPA·VPA)) e **Lynch/PEGY** (P/L justo = crescimento% + DY%), mais a **Média** e a
+**Mediana** deles. A mediana é mais robusta quando um método dispara; o *upside* do e-mail é
+vs. a mediana. A tabela principal do e-mail já mostra o **Teto médio (upside%)** ao lado das
+demais colunas. Premissas: `k` = Selic (+ prêmio opcional), `g` conservador. Estimativas
+sensíveis às premissas — não são gatilho.
+
+Novas flags: `--strict-criteria`, `--no-mktcap-filter`. Novos envs opcionais: `SELIC`
+(ex.: `15`), `INSIDER_CHECK` (`0` desliga).
+
 ## Ajustes comuns
 
 - Mudar pesos do Investment Score → `scoring.py` (dict `W`).

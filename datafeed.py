@@ -37,6 +37,7 @@ class Fundamentals:
     div_patrim: float = math.nan    # Dívida/Patrimônio
     liq_corr: float = math.nan      # Liquidez corrente
     cresc_5a: float = math.nan      # Crescimento receita 5a (%) -> proxy p/ PEG
+    market_cap: float = math.nan    # Valor de mercado (R$)
     setor: str = ""
 
     def is_financial(self) -> bool:
@@ -157,6 +158,7 @@ def _from_yfinance(ticker: str) -> Fundamentals:
     f.liq_corr = g("currentRatio")
     eg = g("earningsGrowth", "revenueGrowth")
     f.cresc_5a = eg * 100 if pd.notna(eg) else math.nan
+    f.market_cap = g("marketCap")
     f.setor = str(info.get("sector") or info.get("industry") or "")
     return f
 
@@ -167,11 +169,13 @@ def get_fundamentals(ticker: str) -> Fundamentals:
         return _from_yfinance(ticker)
     # completa buracos com yfinance
     yf_needed = any(pd.isna(getattr(f, a)) for a in
-                    ("pl", "pvp", "dy", "roe", "ev_ebitda", "div_patrim", "liq_corr"))
+                    ("pl", "pvp", "dy", "roe", "ev_ebitda", "div_patrim",
+                     "liq_corr", "market_cap"))
     if yf_needed:
         yf_f = _from_yfinance(ticker)
         for a in ("pl", "pvp", "dy", "roe", "roic", "mrg_liq", "ev_ebitda",
-                  "div_liq_ebitda", "div_patrim", "liq_corr", "cresc_5a"):
+                  "div_liq_ebitda", "div_patrim", "liq_corr", "cresc_5a",
+                  "market_cap"):
             if pd.isna(getattr(f, a)) and pd.notna(getattr(yf_f, a)):
                 setattr(f, a, getattr(yf_f, a))
         if not f.setor and yf_f.setor:
@@ -195,3 +199,76 @@ def get_prices(ticker: str, period: str = "2y", interval: str = "1d") -> Optiona
     keep = [c for c in ("Open", "High", "Low", "Close", "Volume") if c in df.columns]
     df = df[keep].dropna()
     return df if len(df) >= 60 else None
+
+
+# -------- SELIC (Banco Central) --------
+def get_selic(default: float = 15.0) -> float:
+    """Selic meta anual (%). Tenta a API do BCB (série 432); cai no env SELIC ou default.
+
+    A rede do GitHub Actions alcança api.bcb.gov.br normalmente.
+    """
+    import os
+    env = os.getenv("SELIC")
+    if env:
+        try:
+            return float(str(env).replace(",", "."))
+        except Exception:
+            pass
+    try:
+        import requests
+        url = ("https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/"
+               "ultimos/1?formato=json")
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        return float(str(r.json()[-1]["valor"]).replace(",", "."))
+    except Exception:
+        return default
+
+
+# -------- INSIDERS (Fundamentus) --------
+def get_insider_sells(ticker: str, meses: int = 12,
+                      min_volume: float = 1_000_000.0):
+    """Best-effort: houve VENDA expressiva de insiders nos últimos `meses`?
+
+    Raspa a página de insiders do Fundamentus e soma o volume de vendas recentes.
+    Retorna:
+        True  -> houve venda relevante (>= min_volume no período)
+        False -> não houve venda relevante
+        None  -> não deu para avaliar (página mudou, sem dados, erro de rede)
+
+    Como é raspagem, é frágil por natureza; em qualquer dúvida retorna None (n/d) e o
+    critério simplesmente não pesa. Desligue com env INSIDER_CHECK=0.
+    """
+    import os
+    if os.getenv("INSIDER_CHECK", "1") == "0":
+        return None
+    try:
+        import io
+        import datetime as _dt
+        import requests
+        url = f"https://www.fundamentus.com.br/insiders.php?papel={ticker.upper()}&tipo=2"
+        headers = {"User-Agent": "Mozilla/5.0 (screener)"}
+        html = requests.get(url, headers=headers, timeout=20).text
+        tables = pd.read_html(io.StringIO(html), decimal=",", thousands=".")
+        if not tables:
+            return None
+        # escolhe a maior tabela (a de movimentações)
+        df = max(tables, key=lambda t: t.shape[0]).copy()
+        df.columns = [str(c).strip().lower() for c in df.columns]
+
+        col_data = next((c for c in df.columns if "data" in c or "mês" in c or "mes" in c), None)
+        col_tipo = next((c for c in df.columns if "tipo" in c or "opera" in c or "movim" in c), None)
+        col_vol = next((c for c in df.columns if "volume" in c or "valor" in c or "r$" in c), None)
+        if not (col_data and col_vol):
+            return None
+
+        dt = pd.to_datetime(df[col_data], errors="coerce", dayfirst=True)
+        corte = pd.Timestamp(_dt.date.today()) - pd.DateOffset(months=meses)
+        recent = df[dt >= corte]
+        if col_tipo:
+            mask = recent[col_tipo].astype(str).str.contains("venda", case=False, na=False)
+            recent = recent[mask]
+        vol = pd.to_numeric(recent[col_vol], errors="coerce").fillna(0).abs().sum()
+        return bool(vol >= min_volume)
+    except Exception:
+        return None

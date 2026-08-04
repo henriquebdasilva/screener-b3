@@ -48,12 +48,12 @@ class MailConfig:
 
 def config_from_env() -> MailConfig:
     c = MailConfig(
-        host=os.getenv("SMTP_HOST", "smtp.gmail.com"),
-        port=int(os.getenv("SMTP_PORT", "465")),
-        user=os.getenv("SMTP_USER", ""),
-        password=os.getenv("SMTP_PASS", ""),
-        mail_to=os.getenv("MAIL_TO", ""),
-        mail_from=os.getenv("MAIL_FROM", ""),
+        host=(os.getenv("SMTP_HOST") or "smtp.gmail.com").strip(),
+        port=int(os.getenv("SMTP_PORT") or 465),
+        user=(os.getenv("SMTP_USER") or "").strip(),
+        password=(os.getenv("SMTP_PASS") or "").strip(),
+        mail_to=(os.getenv("MAIL_TO") or "").strip(),
+        mail_from=(os.getenv("MAIL_FROM") or "").strip(),
     )
     if not c.mail_from:
         c.mail_from = c.user
@@ -90,14 +90,50 @@ def _fmt_row(r) -> str:
             return f"{float(x):.{d}f}"
         except Exception:
             return "—"
+    crit = "—"
+    try:
+        if pd.notna(r.get("criterios_ok")) and pd.notna(r.get("criterios_aplicaveis")):
+            crit = f"{int(r.get('criterios_ok'))}/{int(r.get('criterios_aplicaveis'))}"
+    except Exception:
+        pass
+    tmed = r.get("teto_medio")
+    upm = r.get("teto_upside_media_pct")
+    if upm is None or (isinstance(upm, float) and pd.isna(upm)):
+        upm = r.get("teto_upside_pct")
+    teto_cell = "—"
+    if pd.notna(tmed):
+        up_s = f" ({float(upm):+.0f}%)" if pd.notna(upm) else ""
+        teto_cell = f"{float(tmed):.2f}{up_s}"
     return (
         f"<tr><td><b>{r.name}</b></td><td>{r.get('origem','')}</td>"
         f"<td>{r.get('setor','')}</td><td>{num(r.get('investment'),0)}</td>"
         f"<td>{num(r.get('quality'),0)}</td><td>{num(r.get('value'),0)}</td>"
         f"<td>{num(r.get('safety'),0)}</td><td>{num(r.get('dividend'),0)}</td>"
-        f"<td>{tag}</td><td>{r.get('trend','')}</td>"
-        f"<td>{num(r.get('close'),2)}</td></tr>"
+        f"<td>{crit}</td><td>{tag}</td><td>{r.get('trend','')}</td>"
+        f"<td>{num(r.get('close'),2)}</td><td>{teto_cell}</td></tr>"
     )
+
+
+def _teto_table(df: pd.DataFrame) -> str:
+    def num(x, d=2):
+        try:
+            v = float(x)
+            return f"{v:.{d}f}" if not (v != v) else "—"
+        except Exception:
+            return "—"
+    head = ("<tr><th>Ativo</th><th>Preço</th><th>Bazin</th><th>Gordon</th><th>DCF</th>"
+            "<th>Graham</th><th>Lynch</th><th>Média</th><th>Mediana</th><th>Upside*</th></tr>")
+    rows = []
+    for _, r in df.iterrows():
+        up = r.get("teto_upside_pct")
+        up_s = f"{float(up):+.0f}%" if pd.notna(up) else "—"
+        rows.append(
+            f"<tr><td><b>{r.name}</b></td><td>{num(r.get('close'))}</td>"
+            f"<td>{num(r.get('teto_bazin'))}</td><td>{num(r.get('teto_gordon'))}</td>"
+            f"<td>{num(r.get('teto_dcf'))}</td><td>{num(r.get('teto_graham'))}</td>"
+            f"<td>{num(r.get('teto_lynch'))}</td><td>{num(r.get('teto_medio'))}</td>"
+            f"<td><b>{num(r.get('teto_mediana'))}</b></td><td>{up_s}</td></tr>")
+    return f"<table>{head}{''.join(rows)}</table>"
 
 
 def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict) -> str:
@@ -105,23 +141,34 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict) -> str:
         body = '<p class="empty">Nenhum papel passou no corte fundamentalista hoje.</p>'
         n_graf = 0
     else:
-        n_graf = int((selecionados.get("oportunidade_grafica", "Não") != "Não").sum())
+        og = selecionados["oportunidade_grafica"] if "oportunidade_grafica" \
+            in selecionados.columns else pd.Series("Não", index=selecionados.index)
+        n_graf = int((og != "Não").sum())
         head = ("<tr><th>Ativo</th><th>Origem</th><th>Setor</th><th>Invest.</th>"
                 "<th>Qual.</th><th>Value</th><th>Safety</th><th>Div.</th>"
-                "<th>Oport. gráfica</th><th>Tendência</th><th>Preço</th></tr>")
+                "<th>Critérios</th><th>Oport. gráfica</th><th>Tendência</th><th>Preço</th>"
+                "<th>Teto médio</th></tr>")
         rows = "".join(_fmt_row(r) for _, r in selecionados.iterrows())
-        body = f"<table>{head}{rows}</table>"
+        body = (f"<table>{head}{rows}</table>"
+                f'<h2 style="font-size:15px;margin:20px 0 6px">Preços-teto (R$)</h2>'
+                f'<p class="sub" style="margin:0 0 8px">Cinco métodos — Bazin (DY 6%), '
+                f'Gordon (dividendos), DCF (lucros), Graham e Lynch/PEGY — mais a '
+                f'<b>Média</b> e a <b>Mediana</b> deles (a mediana é mais robusta a um '
+                f'método que dispara). *Upside vs. mediana. Premissas: k = Selic, g '
+                f'conservador. Estimativas sensíveis às premissas — não são gatilho.</p>'
+                f"{_teto_table(selecionados)}")
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{_CSS}</style></head>
 <body><div class="card">
 <h1>Screener B3 — {hoje}</h1>
-<p class="sub">Papéis que atendem aos <b>critérios fundamentalistas</b>, com a
-<b>oportunidade gráfica</b> sinalizada por papel (Rompimento / Pivô de alta / Não).
-{n_graf} com sinal gráfico hoje. Parâmetros: {meta}</p>
+<p class="sub">Papéis que atendem aos <b>critérios fundamentalistas</b> (checklist:
+ROE≥Selic, ROE/ROIC/CAGR vs setor, margem≥15%, Dív.Líq/EBITDA&lt;3 e vs setor, market cap
+≥ R$300 mi, insiders). A <b>oportunidade gráfica</b> (Rompimento/Pivô/Não) é sinalizada por
+papel. {n_graf} com sinal gráfico hoje. Parâmetros: {meta}</p>
 {body}
 <p class="warn">Material analítico gerado automaticamente. <b>Não é recomendação de
-investimento.</b> Preços e fundamentos vêm de fontes públicas e podem conter erros ou
-defasagem. A oportunidade gráfica é um sinal de <b>timing</b>, não de qualidade. A planilha
-completa (Selecionados + Universo) segue anexada.</p>
+investimento.</b> Dados de fontes públicas podem conter erros/defasagem; "vs setor" usa a
+média do universo varrido; insiders são best-effort. A planilha completa (Selecionados +
+Universo, com todos os critérios) segue anexada.</p>
 </div></body></html>"""
 
 
@@ -167,8 +214,16 @@ def send_report_email(subject: str, html: str, attachments: list[str],
         _attach(msg, a)
 
     context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(cfg.host, cfg.port, context=context) as srv:
-        srv.login(cfg.user, cfg.password)
-        srv.send_message(msg)
+    if int(cfg.port) == 587:                       # STARTTLS
+        with smtplib.SMTP(cfg.host, cfg.port, timeout=60) as srv:
+            srv.ehlo()
+            srv.starttls(context=context)
+            srv.ehlo()
+            srv.login(cfg.user, cfg.password)
+            srv.send_message(msg)
+    else:                                          # SSL direto (465, padrão)
+        with smtplib.SMTP_SSL(cfg.host, cfg.port, context=context, timeout=60) as srv:
+            srv.login(cfg.user, cfg.password)
+            srv.send_message(msg)
     print(f"E-mail enviado para: {', '.join(cfg.recipients)}")
     return True
