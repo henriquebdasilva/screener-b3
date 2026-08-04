@@ -93,42 +93,104 @@ def get_events(ticker: str) -> dict:
 
 
 # ----------------- TESE POR IA (Gemini) -----------------
-_PROMPT = """Você é um analista fundamentalista. Com base EXCLUSIVAMENTE nos dados abaixo,
-escreva em português uma tese de investimento curta (2 a 4 frases).
+_PROMPT = """Você é um analista fundamentalista sênior. Escreva uma análise de investimento
+de 8 a 10 frases, em português, sobre o papel {ticker}, com base EXCLUSIVAMENTE nos dados
+abaixo.
+
+COMO ESCREVER (correlacione os indicadores — não os liste soltos):
+- Posicione cada indicador relevante FRENTE À MÉDIA DO SETOR informada entre parênteses
+  (acima/abaixo dos pares) e diga o que isso sugere.
+- Relacione qualidade × preço (ROE/ROIC altos convivem com P/L e P/VP baixos?),
+  rentabilidade × endividamento (o retorno vem com alavancagem controlada?) e
+  dividendo × sustentabilidade (o DY é coerente com o lucro, o payout e a dívida?).
+- Comente o crescimento (CAGR vs setor) e o que o checklist de critérios revela.
+- Trate a faixa de preço-teto (métodos, média/mediana e upside) como referência de
+  valuation — apontando dispersão entre os métodos, se houver.
+- Encerre com um balanço claro de PRÓS e CONTRAS que os dados sugerem.
 
 REGRAS OBRIGATÓRIAS:
-- NÃO use conhecimento externo nem memória sobre a empresa.
-- NÃO invente fatos, notícias, eventos, números, preço-alvo ou datas.
-- NÃO recomende comprar, vender ou manter. Descreva prós e contras que OS DADOS sugerem.
-- Se algo não estiver nos dados, não comente. Seja objetivo e neutro.
+- Use SOMENTE os dados abaixo. NÃO use conhecimento externo nem memória sobre a empresa.
+- NÃO invente fatos, notícias, eventos, números ou preço-alvo além dos fornecidos.
+- NÃO recomende comprar, vender ou manter. Seja objetivo, neutro e analítico.
+- "Média do setor" = média dos pares DESTE screener (amostra limitada), não do setor inteiro.
 
-DADOS DO PAPEL {ticker}:
+DADOS:
 {dados}
 
-Responda apenas com o parágrafo da tese."""
+Responda apenas com a análise."""
 
 
-def _fmt_metrics(row: pd.Series) -> str:
-    campos = [
-        ("Setor", "setor"), ("Investment Score", "investment"), ("Quality", "quality"),
-        ("Value", "value"), ("Safety", "safety"), ("Dividend", "dividend"),
-        ("P/L", "pl"), ("P/VP", "pvp"), ("DY %", "dy"), ("ROE %", "roe"),
-        ("ROIC %", "roic"), ("Margem líquida %", "mrg_liq"),
-        ("Dív.Líq/EBITDA", "div_liq_ebitda"), ("Liquidez corrente", "liq_corr"),
-        ("Cresc. receita 5a %", "cresc_5a"), ("Critérios atendidos", "criterios_ok"),
-        ("Oportunidade gráfica", "oportunidade_grafica"), ("Tendência", "trend"),
-        ("Preço", "close"), ("Teto médio R$", "teto_medio"),
-        ("Teto mediana R$", "teto_mediana"), ("Upside vs mediana %", "teto_upside_pct"),
-    ]
-    linhas = []
-    for label, key in campos:
-        v = row.get(key)
-        if v is None or (isinstance(v, float) and pd.isna(v)):
-            continue
-        if isinstance(v, float):
-            v = round(v, 2)
-        linhas.append(f"- {label}: {v}")
-    return "\n".join(linhas)
+def _v(x, d=2):
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return None
+    if isinstance(x, float):
+        return round(x, d)
+    return x
+
+
+def _cmp(val, med, unit="", d=1):
+    """'12.3% (setor 9.0%, acima)' — ou None se não houver valor."""
+    v = _v(val, d)
+    if v is None:
+        return None
+    s = f"{v}{unit}"
+    m = _v(med, d)
+    if m is not None:
+        rel = "acima" if float(val) >= float(med) else "abaixo"
+        s += f" (setor {m}{unit}, {rel})"
+    return s
+
+
+def _flag(x):
+    return "n/d" if x is None or (isinstance(x, float) and pd.isna(x)) else ("Sim" if x else "Não")
+
+
+def _fmt_metrics(r: pd.Series) -> str:
+    L = []
+    def add(label, s):
+        if s is not None:
+            L.append(f"- {label}: {s}")
+
+    add("Setor", r.get("setor"))
+    add("Scores (0-100)", f"Investment {_v(r.get('investment'),0)} | Quality "
+        f"{_v(r.get('quality'),0)} | Value {_v(r.get('value'),0)} | Safety "
+        f"{_v(r.get('safety'),0)} | Dividend {_v(r.get('dividend'),0)}")
+    add("ROE", _cmp(r.get("roe"), r.get("roe_setor_med"), "%"))
+    add("ROIC", _cmp(r.get("roic"), r.get("roic_setor_med"), "%"))
+    add("Margem líquida", None if _v(r.get("mrg_liq")) is None else f"{_v(r.get('mrg_liq'))}%")
+    add("P/L", _v(r.get("pl")))
+    add("P/VP", _v(r.get("pvp")))
+    add("PEG", _v(r.get("peg")))
+    add("EV/EBITDA", _v(r.get("ev_ebitda")))
+    add("Dív.Líq/EBITDA", _cmp(r.get("div_liq_ebitda"), r.get("div_setor_med"), "", 2))
+    add("Dív/Patrimônio", _v(r.get("div_patrim")))
+    add("Liquidez corrente", _v(r.get("liq_corr")))
+    add("CAGR receita 5a", _cmp(r.get("cresc_5a"), r.get("cagr_setor_med"), "%"))
+    add("DY", None if _v(r.get("dy")) is None else f"{_v(r.get('dy'))}%")
+    add("Market cap (R$)", _v(r.get("market_cap"), 0))
+    # checklist item a item
+    chk = (f"ROE≥Selic {_flag(r.get('roe_ge_selic'))} | ROE≥setor "
+           f"{_flag(r.get('roe_ge_setor'))} | ROIC≥setor {_flag(r.get('roic_ge_setor'))} | "
+           f"margem≥15% {_flag(r.get('margem_ge_15'))} | CAGR≥setor "
+           f"{_flag(r.get('cagr_ge_setor'))} | Dív.Líq/EBITDA<3 e ≤setor "
+           f"{_flag(r.get('divida_ok'))} | market cap≥300mi {_flag(r.get('marketcap_ok'))} | "
+           f"sem venda de insiders {_flag(r.get('insider_ok'))}")
+    add("Checklist", chk)
+    add("Critérios atendidos", None if _v(r.get("criterios_ok")) is None else
+        f"{int(r.get('criterios_ok'))} de {int(r.get('criterios_aplicaveis'))}")
+    add("Sinal gráfico", r.get("oportunidade_grafica"))
+    add("Tendência", r.get("trend"))
+    add("Preço atual (R$)", _v(r.get("close")))
+    add("Preços-teto (R$)", f"Bazin {_v(r.get('teto_bazin'))} | Gordon "
+        f"{_v(r.get('teto_gordon'))} | DCF {_v(r.get('teto_dcf'))} | Graham "
+        f"{_v(r.get('teto_graham'))} | Lynch {_v(r.get('teto_lynch'))} | Média "
+        f"{_v(r.get('teto_medio'))} | Mediana {_v(r.get('teto_mediana'))} | Upside vs "
+        f"mediana {_v(r.get('teto_upside_pct'),1)}%")
+    add("Próximo resultado", None if str(r.get("prox_resultado") or "n/d") == "n/d"
+        else r.get("prox_resultado"))
+    add("Ex-dividendo", None if str(r.get("ex_dividendo") or "n/d") == "n/d" else
+        f"{r.get('ex_dividendo')} ({r.get('ex_tipo')})")
+    return "\n".join(L)
 
 
 def _gemini(prompt: str, api_key: str, model: str, timeout: int = 40) -> Optional[str]:
@@ -137,7 +199,7 @@ def _gemini(prompt: str, api_key: str, model: str, timeout: int = 40) -> Optiona
            f"{model}:generateContent?key={api_key}")
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 260},
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 700},
     }
     r = requests.post(url, json=body, timeout=timeout)
     r.raise_for_status()

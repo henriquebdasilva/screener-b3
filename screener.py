@@ -84,6 +84,11 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     from pricing import compute_ceilings
     df["market_cap"] = pd.Series(mcap)
     smeans = sector_means(df)
+    # médias do setor (pares do universo) por papel — alimentam a tese da IA
+    df["roe_setor_med"] = df["setor"].map(lambda s: smeans.get(s, {}).get("roe"))
+    df["roic_setor_med"] = df["setor"].map(lambda s: smeans.get(s, {}).get("roic"))
+    df["div_setor_med"] = df["setor"].map(lambda s: smeans.get(s, {}).get("div_liq_ebitda"))
+    df["cagr_setor_med"] = df["setor"].map(lambda s: smeans.get(s, {}).get("cresc_5a"))
     fin_map = {f.ticker: f.is_financial() for f in funds}
 
     chk_rows, ceil_rows = {}, {}
