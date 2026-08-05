@@ -68,6 +68,24 @@ compilar o TA-Lib**. Para forçar o TA-Lib, adicione-o ao `requirements.txt`.
 > e-mail. Aqui o resultado sai como CSV + Markdown. A função tem a mesma assinatura
 > (`detect_breakout(df) -> BreakoutResult`), então dá para evoluir sem tocar no resto.
 
+### Filtros de assertividade (mais rígido que o original)
+
+O algoritmo do repositório é permissivo (consolidação larga, sem volume, sem filtro de
+tendência no rompimento). Para reduzir sinais fracos, o **Rompimento** agora exige, além de
+consolidação + novo topo:
+
+- **Consolidação estreita:** amplitude ≤ **10%** (era 15%). Flag `--breakout-consol-pct`.
+- **Margem mínima:** fechar acima do topo de 15 dias por ≥ **1,5%** (evita romper "de
+  raspão"). Flag `--breakout-margin-pct`.
+- **Volume:** volume do dia ≥ **1,5×** a média de 20 dias. Flag `--vol-mult`; desliga com
+  `--no-volume`.
+- **Tendência de alta:** preço > **MM200** e **MM50 > MM200** (elimina rompimentos em
+  baixa). Desliga com `--no-trend`.
+
+O **Pivô de alta** segue a lógica original (mais frouxa: consolidação ≤20%, tendência não
+"Em Baixa", recuo+retomada) — é a rede mais ampla. Para reproduzir o comportamento original
+do rompimento, rode com `--no-volume --no-trend --breakout-consol-pct 15 --breakout-margin-pct 0`.
+
 ## E-mail (relatório + planilha anexa)
 
 Ao final, o app monta um **relatório HTML** com a tabela dos ativos que passaram nos dois
@@ -171,6 +189,15 @@ são opcionais e têm valores-padrão no código:
 - `GEMINI_MODEL` — use só o id, ex.: `gemini-2.5-flash` (sem `models/`, sem aspas, sem
   espaços). O código já sanitiza esses casos; se vier inválido/vazio, cai num default.
 - `AI_MAX_CALLS` — padrão 40; teto de chamadas por execução (respeita a cota do free tier).
+- `AI_SLEEP` — segundos entre chamadas (padrão 30, ~2/min). Aumente se tomar muito 429.
+
+**Cota / HTTP 429 (importante).** A tese roda **só para os aprovados** (fundamentos +
+rompimento) — não para todos os selecionados. O free tier do Gemini limita ~10 req/min e
+tem teto diário; em dias com muitos aprovados (ou depois de vários testes no mesmo dia) as
+chamadas podem tomar **HTTP 429** e alguns papéis ficam sem tese. O app já faz **retry com
+espera** (respeita `Retry-After`) e usa `AI_SLEEP` entre chamadas. Se ainda faltar: aumente
+`AI_SLEEP`, use um modelo **Flash-Lite** (mais req/min), reduza o universo, ou rode no dia
+seguinte — o **cache preserva** as teses que já saíram, então só as faltantes são geradas.
 
 **Erros comuns no log (linhas `[IA] ...`):**
 
@@ -184,10 +211,15 @@ são opcionais e têm valores-padrão no código:
 - Teses **truncadas** ou com eco de instruções → resolvido desligando o *thinking*
   (`thinkingBudget: 0`) e reforçando o prompt; se persistir, suba `AI_MAX_TOKENS`.
 
-**Cache (importante):** as teses ficam em `reports/cache_tese.json` com a **data** na chave.
-Rodar de novo **no mesmo dia** reaproveita as teses já geradas (inclusive versões ruins de
-um teste anterior). Para regenerar **hoje**, **apague `reports/cache_tese.json`** do
-repositório antes de rodar (ou rode no dia seguinte, quando a chave do cache muda de data).
+**Cache:** as teses ficam em `reports/cache_tese.json`, com chave `ticker:data:versão`.
+Rodar de novo no mesmo dia reaproveita o que já foi gerado (economiza cota). Duas formas de
+regenerar sem esperar o dia seguinte:
+
+- **Automático ao mudar o prompt:** a constante `PROMPT_VERSION` em `enrich.py` entra na
+  chave do cache. Sempre que a lógica/prompt da tese muda, essa versão sobe e o cache antigo
+  é **ignorado sozinho** — você não precisa apagar nada.
+- **Sob demanda:** rode com **`--force-ia`** para ignorar o cache e regenerar todas as teses
+  (ou apague `reports/cache_tese.json`).
 
 ## Ajustes comuns
 
