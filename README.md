@@ -154,8 +154,21 @@ critérios aplicáveis, rode com **`--strict-criteria`**.
 (√(22,5·LPA·VPA)) e **Lynch/PEGY** (P/L justo = crescimento% + DY%), mais a **Média** e a
 **Mediana** deles. A mediana é mais robusta quando um método dispara; o *upside* do e-mail é
 vs. a mediana. A tabela principal do e-mail já mostra o **Teto médio (upside%)** ao lado das
-demais colunas. Premissas: `k` = Selic (+ prêmio opcional), `g` conservador. Estimativas
-sensíveis às premissas — não são gatilho.
+demais colunas. Premissas: `k` = Selic (+ prêmio opcional), `g` conservador.
+
+**DY do valuation = média de ~5 anos.** Bazin e Gordon dependem do dividendo; usar o **DY de
+12 meses** cru infla o teto quando há distribuição extraordinária (ex.: VULC3 com DY 29% →
+Bazin irreal). Por isso, para esses dois métodos o app usa o **DY médio dos últimos N anos**
+(proventos do ano ÷ preço médio do ano, via histórico do yfinance) — a coluna `dy_teto` na
+planilha mostra o valor usado, e a coluna `dy` mantém o DY corrente. Flags: `--dy-years`
+(default 5) e `--no-avg-dy` (volta ao DY de 12 meses).
+
+**Bazin amarrado à Selic + margem de segurança.** O Bazin clássico usa 6% fixo, o que
+descola do custo de capital atual (Selic ~14%). Aqui o yield-alvo do Bazin é a **Selic**
+(flag `--bazin-yield` fixa um % se quiser). E o teto consolidado ganha um **desconto de
+segurança** (coluna `teto_ajustado` = mediana × (1 − desconto); default **10%**, flag
+`--teto-desconto`). O e-mail mostra o **Teto (aj.)** e o *upside* é calculado sobre ele.
+Estimativas sensíveis às premissas — não são gatilho.
 
 Novas flags: `--strict-criteria`, `--no-mktcap-filter`. Novos envs opcionais: `SELIC`
 (ex.: `15`), `INSIDER_CHECK` (`0` desliga).
