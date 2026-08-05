@@ -52,6 +52,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           AI_MAX_CALLS: ${{ secrets.AI_MAX_CALLS }}
+          AI_MAX_TOKENS: ${{ secrets.AI_MAX_TOKENS }}
           AI_DEBUG: ${{ secrets.AI_DEBUG }}
           SELIC: ${{ secrets.SELIC }}
           INSIDER_CHECK: ${{ secrets.INSIDER_CHECK }}
