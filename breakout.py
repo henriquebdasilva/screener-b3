@@ -169,7 +169,7 @@ def is_pivoting(df, percentage, min_days, max_days) -> bool:
 def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     breakout_consol_pct: float = 10.0,   # consolidação mais estreita (era 15)
                     min_breakout_margin_pct: float = 1.5,  # romper o topo por ≥ isso
-                   # require_volume: bool = True, vol_mult: float = 1.5,
+                    require_volume: bool = True, vol_mult: float = 1.5,
                     require_trend: bool = True,
                     pivot_consol_pct: float = 20.0,
                     **_ignored) -> BreakoutResult:
