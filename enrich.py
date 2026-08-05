@@ -192,7 +192,7 @@ def _fmt_metrics(r: pd.Series) -> str:
 
 
 def _gemini(prompt: str, api_key: str, model: str, timeout: int = 60,
-            debug: bool = False, max_tokens: int = 1024) -> str:
+            debug: bool = False, max_tokens: int = 1024, retries: int = 3) -> str:
     import requests
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{model}:generateContent?key={api_key}")
@@ -200,14 +200,25 @@ def _gemini(prompt: str, api_key: str, model: str, timeout: int = 60,
     def _post(with_thinking_off: bool):
         gen = {"temperature": 0.3, "maxOutputTokens": max_tokens}
         if with_thinking_off:
-            # modelos 2.5+ "pensam" e consomem o orçamento de saída -> desliga
             gen["thinkingConfig"] = {"thinkingBudget": 0}
         body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": gen}
         return requests.post(url, json=body, timeout=timeout)
 
-    r = _post(True)
-    if r.status_code == 400 and "thinking" in r.text.lower():
-        r = _post(False)          # modelo não aceita thinkingConfig -> tenta sem
+    r = None
+    for attempt in range(retries + 1):
+        r = _post(True)
+        if r.status_code == 400 and "thinking" in r.text.lower():
+            r = _post(False)          # modelo não aceita thinkingConfig -> tenta sem
+        if r.status_code in (429, 503) and attempt < retries:
+            # respeita Retry-After se vier; senão backoff crescente
+            ra = r.headers.get("Retry-After")
+            wait = int(ra) if (ra and str(ra).isdigit()) else 15 * (attempt + 1)
+            print(f"   [IA] HTTP {r.status_code} (cota/indisponível) — aguardando {wait}s "
+                  f"e tentando de novo ({attempt + 1}/{retries}).")
+            time.sleep(wait)
+            continue
+        break
+
     if r.status_code != 200:
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:400]}")
     data = r.json()
@@ -264,6 +275,7 @@ def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports",
 
     max_calls = int(os.getenv("AI_MAX_CALLS", "40") or 40)
     max_tokens = int(os.getenv("AI_MAX_TOKENS", "1024") or 1024)
+    sleep_s = float(os.getenv("AI_SLEEP", "30") or 30)   # 30s entre chamadas (~2/min)
     cache_path = os.path.join(outdir, "cache_tese.json")
     try:
         cache = json.load(open(cache_path, encoding="utf-8"))
@@ -288,7 +300,7 @@ def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports",
             calls += 1
             if debug:
                 print(f"  [IA] {tk}: OK ({len(out[tk])} chars)")
-            time.sleep(4.0)          # respeita rate limit do free tier
+            time.sleep(sleep_s)          # respeita rate limit do free tier
         except Exception as e:
             erros += 1
             print(f"  [IA] {tk}: FALHOU -> {e}")
@@ -300,9 +312,9 @@ def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports",
         pass
     print(f"[IA] resumo: {calls} tese(s) gerada(s), {erros} falha(s), "
           f"{sum(1 for v in out.values() if v)} com texto (modelo {model}).")
-    if erros and not calls:
-        print("[IA] TODAS falharam. Causas comuns: modelo inválido (defina GEMINI_MODEL "
-              "com um id atual do AI Studio, ex.: gemini-2.5-flash), chave inválida (HTTP "
-              "400) ou cota excedida (HTTP 429). Rode com secret AI_DEBUG=1 para ver a "
-              "resposta bruta.")
+    if erros:
+        print("[IA] Houve falhas. Se forem HTTP 429, é cota do free tier (por minuto ou "
+              "diária) — aumente AI_SLEEP, reduza o universo, use um modelo Flash-Lite "
+              "(mais RPM) ou rode amanhã (o cache preserva as que já saíram). Modelo "
+              "inválido = 404; chave inválida = 400. Rode com AI_DEBUG=1 para detalhes.")
     return out
