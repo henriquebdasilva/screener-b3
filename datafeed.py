@@ -184,21 +184,43 @@ def get_fundamentals(ticker: str) -> Fundamentals:
 
 
 # -------- PREÇOS (OHLCV) --------
-def get_prices(ticker: str, period: str = "2y", interval: str = "1d") -> Optional[pd.DataFrame]:
-    """Retorna DataFrame OHLCV (colunas: Open, High, Low, Close, Volume) ou None."""
+def get_prices(ticker: str, period: str = "5y", interval: str = "1d") -> Optional[pd.DataFrame]:
+    """Retorna DataFrame OHLCV (+coluna Dividends) ou None. 5 anos p/ o DY médio."""
     try:
         import yfinance as yf
         df = yf.Ticker(to_yahoo(ticker)).history(
-            period=period, interval=interval, auto_adjust=True
+            period=period, interval=interval, auto_adjust=True, actions=True
         )
     except Exception:
         return None
     if df is None or df.empty:
         return None
     df = df.rename(columns=str.title)
-    keep = [c for c in ("Open", "High", "Low", "Close", "Volume") if c in df.columns]
-    df = df[keep].dropna()
+    keep = [c for c in ("Open", "High", "Low", "Close", "Volume", "Dividends")
+            if c in df.columns]
+    df = df[keep].dropna(subset=[c for c in keep if c != "Dividends"])
     return df if len(df) >= 60 else None
+
+
+def avg_annual_dy(px: Optional[pd.DataFrame], years: int = 5) -> float:
+    """DY médio dos últimos `years` anos = média de (proventos do ano / preço médio do ano).
+
+    Suaviza dividendos extraordinários que distorcem o DY de 12 meses. NaN se não houver
+    histórico de proventos (ex.: IPO recente) -> o chamador cai no DY corrente.
+    """
+    if px is None or "Dividends" not in px.columns or "Close" not in px.columns:
+        return math.nan
+    df = px[["Close", "Dividends"]].dropna()
+    if df.empty:
+        return math.nan
+    yr = df.index.year
+    div_y = df["Dividends"].groupby(yr).sum()
+    px_y = df["Close"].groupby(yr).mean()
+    dy_y = (div_y / px_y * 100.0)
+    dy_y = dy_y[dy_y > 0].dropna()
+    if dy_y.empty:
+        return math.nan
+    return float(dy_y.tail(years).mean())
 
 
 # -------- SELIC (Banco Central) --------
