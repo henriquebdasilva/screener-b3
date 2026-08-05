@@ -193,7 +193,8 @@ def _fmt_metrics(r: pd.Series) -> str:
     return "\n".join(L)
 
 
-def _gemini(prompt: str, api_key: str, model: str, timeout: int = 40) -> Optional[str]:
+def _gemini(prompt: str, api_key: str, model: str, timeout: int = 40,
+            debug: bool = False) -> str:
     import requests
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{model}:generateContent?key={api_key}")
@@ -202,9 +203,22 @@ def _gemini(prompt: str, api_key: str, model: str, timeout: int = 40) -> Optiona
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 700},
     }
     r = requests.post(url, json=body, timeout=timeout)
-    r.raise_for_status()
+    if r.status_code != 200:
+        # 400=chave/requisição, 404=modelo inexistente, 429=cota/limite
+        raise RuntimeError(f"HTTP {r.status_code}: {r.text[:400]}")
     data = r.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    if debug:
+        print("   [IA debug] resposta bruta:", str(data)[:500])
+    cands = data.get("candidates") or []
+    if not cands:
+        fb = data.get("promptFeedback")
+        raise RuntimeError(f"sem 'candidates' (promptFeedback={fb})")
+    parts = (cands[0].get("content") or {}).get("parts") or []
+    txt = "".join(p.get("text", "") for p in parts).strip()
+    if not txt:
+        raise RuntimeError(f"texto vazio (finishReason="
+                           f"{cands[0].get('finishReason')})")
+    return txt
 
 
 def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports") -> dict:
@@ -214,20 +228,28 @@ def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports") -> dic
     AI_MAX_CALLS (default 40). Usa cache em reports/cache_tese.json.
     """
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not api_key or df is None or df.empty:
-        if not api_key:
-            print("Tese por IA desativada (defina GEMINI_API_KEY) — teses ficam 'n/d'.")
+    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+    debug = os.getenv("AI_DEBUG", "0") == "1"
+    n = 0 if df is None else len(df)
+    masked = f"{api_key[:4]}…({len(api_key)} chars)" if api_key else "VAZIA"
+    print(f"[IA] chave: {masked} | modelo: {model} | papéis p/ tese: {n} | debug={debug}")
+    if not api_key:
+        print("[IA] GEMINI_API_KEY não chegou ao processo. Cheque: (1) o secret existe? "
+              "(2) o workflow injeta 'GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}' no "
+              "env do passo? Secrets não são expostos automaticamente ao processo.")
+        return {}
+    if df is None or df.empty:
+        print("[IA] 0 papéis aprovados hoje (fundamentos + rompimento) — nada a gerar.")
         return {}
 
-    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
-    max_calls = int(os.getenv("AI_MAX_CALLS", "40"))
+    max_calls = int(os.getenv("AI_MAX_CALLS", "40") or 40)
     cache_path = os.path.join(outdir, "cache_tese.json")
     try:
         cache = json.load(open(cache_path, encoding="utf-8"))
     except Exception:
         cache = {}
 
-    out, calls = {}, 0
+    out, calls, erros = {}, 0, 0
     for tk in df.index:
         key = f"{tk}:{hoje}"
         if key in cache:
@@ -235,22 +257,31 @@ def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports") -> dic
             continue
         if calls >= max_calls:
             out[tk] = ""
+            print(f"  [IA] teto de {max_calls} chamadas atingido (AI_MAX_CALLS) — {tk} sem tese.")
             continue
         prompt = _PROMPT.format(ticker=tk, dados=_fmt_metrics(df.loc[tk]))
         try:
-            txt = _gemini(prompt, api_key, model)
+            txt = _gemini(prompt, api_key, model, debug=debug)
             out[tk] = txt or ""
             cache[key] = out[tk]
             calls += 1
+            if debug:
+                print(f"  [IA] {tk}: OK ({len(out[tk])} chars)")
             time.sleep(4.0)          # respeita rate limit do free tier
         except Exception as e:
-            print(f"  [tese] {tk}: {e}")
+            erros += 1
+            print(f"  [IA] {tk}: FALHOU -> {e}")
             out[tk] = ""
     try:
         os.makedirs(outdir, exist_ok=True)
         json.dump(cache, open(cache_path, "w", encoding="utf-8"), ensure_ascii=False)
     except Exception:
         pass
-    if calls:
-        print(f"Teses geradas por IA: {calls} (modelo {model}).")
+    print(f"[IA] resumo: {calls} tese(s) gerada(s), {erros} falha(s), "
+          f"{sum(1 for v in out.values() if v)} com texto (modelo {model}).")
+    if erros and not calls:
+        print("[IA] TODAS falharam. Causas comuns: modelo inválido (defina GEMINI_MODEL "
+              "com um id atual do AI Studio, ex.: gemini-2.5-flash), chave inválida (HTTP "
+              "400) ou cota excedida (HTTP 429). Rode com secret AI_DEBUG=1 para ver a "
+              "resposta bruta.")
     return out
