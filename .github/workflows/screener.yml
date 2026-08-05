@@ -58,7 +58,7 @@ jobs:
           SELIC: ${{ secrets.SELIC }}
           INSIDER_CHECK: ${{ secrets.INSIDER_CHECK }}
         run: |
-          python screener.py --universe "$UNIVERSE" --top-quantile "$TOPQ"
+          python screener.py --universe "$UNIVERSE" --top-quantile "$TOPQ" --no-volume
 
       - name: Commitar relatórios
         run: |
