@@ -168,7 +168,12 @@ descola do custo de capital atual (Selic ~14%). Aqui o yield-alvo do Bazin é a 
 (flag `--bazin-yield` fixa um % se quiser). E o teto consolidado ganha um **desconto de
 segurança** (coluna `teto_ajustado` = mediana × (1 − desconto); default **10%**, flag
 `--teto-desconto`). O e-mail mostra o **Teto (aj.)** e o *upside* é calculado sobre ele.
-Estimativas sensíveis às premissas — não são gatilho.
+Além disso, um método muito fora dos demais (além de **~2,5×** a mediana — ex.: Lynch
+disparado em papel de crescimento) é **descartado do consolidado** (coluna `teto_n_metodos`
+mostra quantos entraram; flag `--teto-outlier-mult`, 0 desliga). Em **bancos, seguradoras e
+holdings**, Graham (subestima) e Lynch (infla) ficam **fora do consolidado** — sobram
+Bazin, Gordon e DCF (os métodos individuais seguem visíveis na tabela). Estimativas
+sensíveis às premissas — não são gatilho.
 
 Novas flags: `--strict-criteria`, `--no-mktcap-filter`. Novos envs opcionais: `SELIC`
 (ex.: `15`), `INSIDER_CHECK` (`0` desliga).
