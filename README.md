@@ -14,7 +14,7 @@ App em Python, disparado **todo dia útil via GitHub Actions**, que:
 ## Estrutura
 
 ```
-universe.py     # listas de tickers do BOVA11/Ibovespa e SMALL11/SMLL (edite aqui)
+universe.py     # busca a composição BOVA11/SMAL11 na iShares (fallback: listas estáticas)
 datafeed.py     # fundamentos (fundamentus -> yfinance) e preços OHLCV (yfinance)
 scoring.py      # scores Quality/Value/Safety/Dividend/Investment (ranking 0-100)
 breakout.py     # >>> filtro de rompimento (TROQUE pela lógica do seu repositório) <<<
@@ -123,9 +123,14 @@ python screener.py --universe both
   Campos ausentes viram `NaN` e **saem do ranking daquele indicador** (não zeram a nota).
 - **Preços:** `yfinance` (tickers `.SA`). Fonte não-oficial; pode ter falhas pontuais — o
   app trata cada ticker com `try/except` e segue.
-- **Composição dos ETFs/índices é _gated_** (página da B3 em JavaScript; arquivo da iShares
-  exige download). Por isso as listas ficam em `universe.py`, versionadas e fáceis de
-  editar. **Atualize-as a cada rebalanceamento** (a B3 rebalanceia quadrimestralmente).
+- **Composição dos ETFs vem da iShares (automático).** No início de cada execução o app
+  baixa os CSVs oficiais de holdings do **BOVA11** e do **SMAL11** (iShares/BlackRock) e
+  extrai os tickers de ação (Asset Class = "Renda Variável", excluindo caixa/futuros). Isso
+  mantém a lista sempre atualizada — inclusive mudanças de ticker (ex.: EMBR3→EMBJ3,
+  NTCO3→NATU3). Se o download falhar (rede/formato), cai automaticamente nas **listas
+  estáticas** de `universe.py` (fallback). Para forçar as listas fixas, defina env
+  `UNIVERSE_SOURCE=static`. As listas estáticas seguem lá como rede de segurança — mantê-las
+  minimamente atualizadas ajuda quando a iShares está fora.
 - **Bancos/seguros/holdings:** EV/EBITDA, Dív.Líq/EBITDA, liquidez corrente e Dív/Patrim
   não se aplicam → o Safety deles usa o que houver; o Investment re-normaliza os pesos.
 - **Small caps** têm dados mais ruidosos (lucros voláteis → mais PEG "n/m", menor liquidez).
