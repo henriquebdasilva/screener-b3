@@ -93,31 +93,25 @@ def get_events(ticker: str) -> dict:
 
 
 # ----------------- TESE POR IA (Gemini) -----------------
-_PROMPT = """Você é um analista fundamentalista sênior. Escreva uma análise de investimento
-de 8 a 10 frases, em português, sobre o papel {ticker}, com base EXCLUSIVAMENTE nos dados
-abaixo.
+_PROMPT = """Você é um analista fundamentalista sênior escrevendo em português do Brasil.
+Escreva uma análise de investimento fluida e bem desenvolvida, de 8 a 10 frases, sobre o
+papel {ticker}, baseada SOMENTE nos dados fornecidos no fim.
 
-COMO ESCREVER (correlacione os indicadores — não os liste soltos):
-- Posicione cada indicador relevante FRENTE À MÉDIA DO SETOR informada entre parênteses
-  (acima/abaixo dos pares) e diga o que isso sugere.
-- Relacione qualidade × preço (ROE/ROIC altos convivem com P/L e P/VP baixos?),
-  rentabilidade × endividamento (o retorno vem com alavancagem controlada?) e
-  dividendo × sustentabilidade (o DY é coerente com o lucro, o payout e a dívida?).
-- Comente o crescimento (CAGR vs setor) e o que o checklist de critérios revela.
-- Trate a faixa de preço-teto (métodos, média/mediana e upside) como referência de
-  valuation — apontando dispersão entre os métodos, se houver.
-- Encerre com um balanço claro de PRÓS e CONTRAS que os dados sugerem.
+Correlacione os indicadores (não os liste): posicione cada número relevante frente à média
+do setor informada entre parênteses (acima/abaixo dos pares) e diga o que sugere; relacione
+qualidade × preço (ROE/ROIC altos convivem com P/L e P/VP baixos?), rentabilidade ×
+endividamento e dividendo × sustentabilidade (o DY é coerente com lucro, payout e dívida?);
+comente o crescimento (CAGR vs setor) e o que o checklist de critérios revela; trate a faixa
+de preço-teto (métodos, média/mediana e upside) como referência de valuation, apontando
+dispersão entre os métodos. Encerre com um balanço claro de prós e contras.
 
-REGRAS OBRIGATÓRIAS:
-- Use SOMENTE os dados abaixo. NÃO use conhecimento externo nem memória sobre a empresa.
-- NÃO invente fatos, notícias, eventos, números ou preço-alvo além dos fornecidos.
-- NÃO recomende comprar, vender ou manter. Seja objetivo, neutro e analítico.
-- "Média do setor" = média dos pares DESTE screener (amostra limitada), não do setor inteiro.
+Restrições: não recomende comprar, vender ou manter; não invente fatos, notícias, datas ou
+preço-alvo além dos dados; "média do setor" é a dos pares deste screener (amostra limitada).
+Escreva em português, em texto corrido — NÃO repita estas instruções, NÃO repita os rótulos
+dos dados, NÃO use listas numeradas ou marcadores, NÃO use inglês. Comece direto pela análise.
 
-DADOS:
-{dados}
-
-Responda apenas com a análise."""
+DADOS DE {ticker}:
+{dados}"""
 
 
 def _v(x, d=2):
@@ -193,31 +187,39 @@ def _fmt_metrics(r: pd.Series) -> str:
     return "\n".join(L)
 
 
-def _gemini(prompt: str, api_key: str, model: str, timeout: int = 40,
-            debug: bool = False) -> str:
+def _gemini(prompt: str, api_key: str, model: str, timeout: int = 60,
+            debug: bool = False, max_tokens: int = 1024) -> str:
     import requests
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{model}:generateContent?key={api_key}")
-    body = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 700},
-    }
-    r = requests.post(url, json=body, timeout=timeout)
+
+    def _post(with_thinking_off: bool):
+        gen = {"temperature": 0.3, "maxOutputTokens": max_tokens}
+        if with_thinking_off:
+            # modelos 2.5+ "pensam" e consomem o orçamento de saída -> desliga
+            gen["thinkingConfig"] = {"thinkingBudget": 0}
+        body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": gen}
+        return requests.post(url, json=body, timeout=timeout)
+
+    r = _post(True)
+    if r.status_code == 400 and "thinking" in r.text.lower():
+        r = _post(False)          # modelo não aceita thinkingConfig -> tenta sem
     if r.status_code != 200:
-        # 400=chave/requisição, 404=modelo inexistente, 429=cota/limite
         raise RuntimeError(f"HTTP {r.status_code}: {r.text[:400]}")
     data = r.json()
     if debug:
-        print("   [IA debug] resposta bruta:", str(data)[:500])
+        print("   [IA debug] resposta bruta:", str(data)[:600])
     cands = data.get("candidates") or []
     if not cands:
-        fb = data.get("promptFeedback")
-        raise RuntimeError(f"sem 'candidates' (promptFeedback={fb})")
+        raise RuntimeError(f"sem 'candidates' (promptFeedback={data.get('promptFeedback')})")
+    fr = cands[0].get("finishReason")
     parts = (cands[0].get("content") or {}).get("parts") or []
     txt = "".join(p.get("text", "") for p in parts).strip()
     if not txt:
-        raise RuntimeError(f"texto vazio (finishReason="
-                           f"{cands[0].get('finishReason')})")
+        raise RuntimeError(f"texto vazio (finishReason={fr}). Se for MAX_TOKENS, aumente "
+                           f"AI_MAX_TOKENS ou confirme que o thinking foi desligado.")
+    if fr == "MAX_TOKENS" and debug:
+        print("   [IA debug] atenção: resposta cortada por MAX_TOKENS.")
     return txt
 
 
@@ -228,11 +230,23 @@ def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports") -> dic
     AI_MAX_CALLS (default 40). Usa cache em reports/cache_tese.json.
     """
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+    raw_model = os.getenv("GEMINI_MODEL", "").strip()
+    # sanitiza: remove aspas, espaços e um eventual prefixo "models/"
+    model = raw_model.strip().strip('"').strip("'").strip()
+    if model.lower().startswith("models/"):
+        model = model.split("/", 1)[1]
+    if " " in model or not model:
+        # nome com espaço (ex.: "Gemini 2.5 Flash") ou vazio -> usa default seguro
+        if model:
+            print(f"[IA] GEMINI_MODEL inválido (tinha espaço/vazio) — usando default. "
+                  f"Use um id como 'gemini-2.5-flash'.")
+        model = "gemini-2.5-flash"
     debug = os.getenv("AI_DEBUG", "0") == "1"
     n = 0 if df is None else len(df)
     masked = f"{api_key[:4]}…({len(api_key)} chars)" if api_key else "VAZIA"
-    print(f"[IA] chave: {masked} | modelo: {model} | papéis p/ tese: {n} | debug={debug}")
+    print(f"[IA] chave: {masked} | papéis p/ tese: {n} | debug={debug}")
+    print(f"[IA] modelo: {len(model)} chars | tem_barra={'/' in model} | "
+          f"tem_espaco={' ' in model} (o valor pode aparecer como *** por ser secret)")
     if not api_key:
         print("[IA] GEMINI_API_KEY não chegou ao processo. Cheque: (1) o secret existe? "
               "(2) o workflow injeta 'GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}' no "
@@ -243,6 +257,7 @@ def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports") -> dic
         return {}
 
     max_calls = int(os.getenv("AI_MAX_CALLS", "40") or 40)
+    max_tokens = int(os.getenv("AI_MAX_TOKENS", "1024") or 1024)
     cache_path = os.path.join(outdir, "cache_tese.json")
     try:
         cache = json.load(open(cache_path, encoding="utf-8"))
@@ -261,7 +276,7 @@ def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports") -> dic
             continue
         prompt = _PROMPT.format(ticker=tk, dados=_fmt_metrics(df.loc[tk]))
         try:
-            txt = _gemini(prompt, api_key, model, debug=debug)
+            txt = _gemini(prompt, api_key, model, debug=debug, max_tokens=max_tokens)
             out[tk] = txt or ""
             cache[key] = out[tk]
             calls += 1

@@ -154,7 +154,7 @@ prompt proíbe usar conhecimento externo, inventar fatos/notícias/preço-alvo e
 É um resumo automático, pode conter erros e **não é recomendação**.
 
 Ativação (só a tese exige chave): env `GEMINI_API_KEY` (secret). Opcionais: `GEMINI_MODEL`
-(default `gemini-2.0-flash`), `AI_MAX_CALLS` (default 40, teto de chamadas/execução p/
+(default `gemini-2.5-flash`), `AI_MAX_TOKENS` (tamanho da resposta, default 1024) e `AI_MAX_CALLS` (default 40, teto de chamadas/execução p/
 respeitar a cota). Sem a chave, as teses ficam vazias e o resto roda igual. Há cache em
 `reports/cache_tese.json` (não repete o mesmo papel no mesmo dia). Desligue tudo com
 `--no-enrich`. A agenda e as teses aparecem no corpo do e-mail e na planilha.
