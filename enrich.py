@@ -25,6 +25,10 @@ import pandas as pd
 
 from universe import to_yahoo
 
+# Suba esta versão sempre que o prompt/lógica da tese mudar: invalida o cache antigo
+# automaticamente (o usuário não precisa apagar reports/cache_tese.json).
+PROMPT_VERSION = "v2"
+
 
 # ----------------- AGENDA (yfinance) -----------------
 def _as_date(x):
@@ -223,11 +227,13 @@ def _gemini(prompt: str, api_key: str, model: str, timeout: int = 60,
     return txt
 
 
-def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports") -> dict:
+def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports",
+                    force: bool = False) -> dict:
     """Gera teses (ancoradas nos dados) para os papéis em df. Retorna {ticker: texto}.
 
-    Requer env GEMINI_API_KEY. Env opcionais: GEMINI_MODEL (default gemini-2.0-flash),
-    AI_MAX_CALLS (default 40). Usa cache em reports/cache_tese.json.
+    Requer env GEMINI_API_KEY. Env opcionais: GEMINI_MODEL (default gemini-2.5-flash),
+    AI_MAX_CALLS (40), AI_MAX_TOKENS (1024), AI_DEBUG (1). Cache versionado em
+    reports/cache_tese.json. force=True ignora o cache (regenera tudo).
     """
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     raw_model = os.getenv("GEMINI_MODEL", "").strip()
@@ -266,8 +272,8 @@ def generate_theses(df: pd.DataFrame, hoje: str, outdir: str = "reports") -> dic
 
     out, calls, erros = {}, 0, 0
     for tk in df.index:
-        key = f"{tk}:{hoje}"
-        if key in cache:
+        key = f"{tk}:{hoje}:{PROMPT_VERSION}"
+        if not force and key in cache:
             out[tk] = cache[key]
             continue
         if calls >= max_calls:

@@ -30,7 +30,8 @@ from breakout import detect_breakout
 def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         vol_mult=1.5, require_trend=True, require_volume=True,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
-        send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True):
+        send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
+        force_ia=False):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
@@ -145,7 +146,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 print(f"  [agenda] {tk}: {e}")
             time.sleep(0.2)
         aprov = df[df["aprovado"]]
-        teses = generate_theses(aprov, hoje, outdir)
+        teses = generate_theses(aprov, hoje, outdir, force=force_ia)
         for tk, txt in teses.items():
             df.at[tk, "tese_ia"] = txt
 
@@ -259,6 +260,8 @@ def parse_args():
                    help="não aplicar o piso de market cap (>= R$ 300 mi)")
     p.add_argument("--no-enrich", action="store_true",
                    help="não buscar agenda (resultado/ex-div) nem gerar tese por IA")
+    p.add_argument("--force-ia", action="store_true",
+                   help="ignora o cache e regenera todas as teses por IA")
     p.add_argument("--outdir", default="reports")
     return p.parse_args()
 
@@ -270,4 +273,4 @@ if __name__ == "__main__":
         require_volume=not a.no_volume, require_contraction=a.require_contraction,
         sleep=a.sleep, outdir=a.outdir, limit=a.limit, send_email=not a.no_email,
         strict_criteria=a.strict_criteria, mktcap_filter=not a.no_mktcap_filter,
-        enrich=not a.no_enrich)
+        enrich=not a.no_enrich, force_ia=a.force_ia)
