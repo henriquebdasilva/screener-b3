@@ -20,6 +20,22 @@ então basta a LISTA de tickers.
 
 from __future__ import annotations
 
+import csv
+import io
+import os
+import re
+
+# CSVs oficiais de composição (iShares/BlackRock). A lista é buscada daqui a cada execução;
+# se a rede/formato falhar, cai na lista estática abaixo.
+BOVA11_URL = ("https://www.blackrock.com/br/products/251816/ishares-ibovespa-fundo-de-"
+              "ndice-fund/1506433276998.ajax?fileType=csv&fileName=BOVA11_holdings&"
+              "dataType=fund")
+SMAL11_URL = ("https://www.blackrock.com/br/products/251752/ishares-bmfbovespa-small-cap-"
+              "fundo-de-ndice-fund/1506433276998.ajax?fileType=csv&fileName=SMAL11_"
+              "holdings&dataType=fund")
+
+_TICKER_RE = re.compile(r"^[A-Z]{4}[0-9]{1,2}$")
+
 # --- Ibovespa (proxy do BOVA11). Lista de referência ~2026; edite conforme o rebal. ---
 IBOV = [
     "ALOS3", "ABEV3", "ASAI3", "AURE3", "AZUL4", "AZZA3", "B3SA3", "BBSE3", "BBDC3",
@@ -57,19 +73,82 @@ def _dedup(seq):
     return out
 
 
-def get_universe(which: str = "both") -> dict[str, list[str]]:
-    """Retorna dict {ticker: [origem,...]} respeitando a seleção.
+def _parse_ishares_csv(text: str) -> list[str] | None:
+    """Extrai tickers de ação (Asset Class = Renda Variável) do CSV da iShares."""
+    text = text.lstrip("\ufeff")
+    lines = text.splitlines()
+    start = next((i for i, l in enumerate(lines)
+                  if l.strip().lower().startswith("ticker,")), None)
+    if start is None:
+        return None
+    reader = csv.reader(io.StringIO("\n".join(lines[start:])))
+    header = next(reader, None)
+    if not header:
+        return None
+    cols = {h.strip().lower(): idx for idx, h in enumerate(header)}
+    i_tk = cols.get("ticker")
+    i_ac = cols.get("asset class")
+    if i_tk is None:
+        return None
+    out = []
+    for row in reader:
+        if not row or len(row) <= i_tk:
+            continue
+        tk = row[i_tk].strip().strip('"').upper()
+        ac = row[i_ac].strip() if (i_ac is not None and len(row) > i_ac) else "Renda Variável"
+        if ac.lower() != "renda variável":            # exclui caixa, money market, futuros
+            continue
+        if _TICKER_RE.match(tk):
+            out.append(tk)
+    seen = set()
+    res = [t for t in out if not (t in seen or seen.add(t))]
+    return res or None
 
-    which: 'ibov' | 'smll' | 'both'
+
+def _fetch_ishares_tickers(url: str, timeout: int = 30) -> list[str] | None:
+    """Baixa e parseia o CSV de holdings. Retorna None em qualquer falha (-> fallback)."""
+    try:
+        import requests
+        headers = {"User-Agent": "Mozilla/5.0 (screener-b3)"}
+        r = requests.get(url, headers=headers, timeout=timeout)
+        r.raise_for_status()
+        r.encoding = r.apparent_encoding or "utf-8"
+        return _parse_ishares_csv(r.text)
+    except Exception as e:
+        print(f"[universo] falha ao baixar iShares ({e}) — usando lista estática.")
+        return None
+
+
+def get_universe(which: str = "both") -> dict[str, list[str]]:
+    """Retorna dict {ticker: [origem,...]}.
+
+    Fonte: CSVs oficiais da iShares (BOVA11/SMAL11), com fallback para as listas estáticas.
+    Defina env UNIVERSE_SOURCE=static para pular o download e usar só as listas fixas.
     """
     which = which.lower()
-    groups = {}
+    static_only = os.getenv("UNIVERSE_SOURCE", "ishares").lower() == "static"
+    groups: dict[str, list[str]] = {}
+
+    def _add(tickers, origem):
+        for t in tickers:
+            g = groups.setdefault(t.upper(), [])
+            if origem not in g:
+                g.append(origem)
+
+    plan = []
     if which in ("ibov", "both"):
-        for t in _dedup(IBOV):
-            groups.setdefault(t, []).append("BOVA11")
+        plan.append(("BOVA11", BOVA11_URL, IBOV))
     if which in ("smll", "both"):
-        for t in _dedup(SMLL):
-            groups.setdefault(t, []).append("SMALL11")
+        plan.append(("SMALL11", SMAL11_URL, SMLL))
+
+    for origem, url, estatica in plan:
+        tks = None if static_only else _fetch_ishares_tickers(url)
+        if tks:
+            print(f"[universo] {origem}: {len(tks)} ativos da iShares (composição oficial).")
+            _add(tks, origem)
+        else:
+            print(f"[universo] {origem}: {len(_dedup(estatica))} ativos da lista estática.")
+            _add(_dedup(estatica), origem)
     return groups
 
 
