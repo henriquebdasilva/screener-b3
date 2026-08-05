@@ -96,14 +96,12 @@ def _fmt_row(r) -> str:
             crit = f"{int(r.get('criterios_ok'))}/{int(r.get('criterios_aplicaveis'))}"
     except Exception:
         pass
-    tmed = r.get("teto_medio")
-    upm = r.get("teto_upside_media_pct")
-    if upm is None or (isinstance(upm, float) and pd.isna(upm)):
-        upm = r.get("teto_upside_pct")
+    taj = r.get("teto_ajustado")
+    up = r.get("teto_upside_pct")
     teto_cell = "—"
-    if pd.notna(tmed):
-        up_s = f" ({float(upm):+.0f}%)" if pd.notna(upm) else ""
-        teto_cell = f"{float(tmed):.2f}{up_s}"
+    if pd.notna(taj):
+        up_s = f" ({float(up):+.0f}%)" if pd.notna(up) else ""
+        teto_cell = f"{float(taj):.2f}{up_s}"
     return (
         f"<tr><td><b>{r.name}</b></td><td>{r.get('origem','')}</td>"
         f"<td>{r.get('setor','')}</td><td>{num(r.get('investment'),0)}</td>"
@@ -122,7 +120,8 @@ def _teto_table(df: pd.DataFrame) -> str:
         except Exception:
             return "—"
     head = ("<tr><th>Ativo</th><th>Preço</th><th>Bazin</th><th>Gordon</th><th>DCF</th>"
-            "<th>Graham</th><th>Lynch</th><th>Média</th><th>Mediana</th><th>Upside*</th></tr>")
+            "<th>Graham</th><th>Lynch</th><th>Média</th><th>Mediana</th>"
+            "<th>Ajust.</th><th>Upside*</th></tr>")
     rows = []
     for _, r in df.iterrows():
         up = r.get("teto_upside_pct")
@@ -132,7 +131,8 @@ def _teto_table(df: pd.DataFrame) -> str:
             f"<td>{num(r.get('teto_bazin'))}</td><td>{num(r.get('teto_gordon'))}</td>"
             f"<td>{num(r.get('teto_dcf'))}</td><td>{num(r.get('teto_graham'))}</td>"
             f"<td>{num(r.get('teto_lynch'))}</td><td>{num(r.get('teto_medio'))}</td>"
-            f"<td><b>{num(r.get('teto_mediana'))}</b></td><td>{up_s}</td></tr>")
+            f"<td>{num(r.get('teto_mediana'))}</td>"
+            f"<td><b>{num(r.get('teto_ajustado'))}</b></td><td>{up_s}</td></tr>")
     return f"<table>{head}{''.join(rows)}</table>"
 
 
@@ -184,7 +184,7 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict) -> str:
         head = ("<tr><th>Ativo</th><th>Origem</th><th>Setor</th><th>Invest.</th>"
                 "<th>Qual.</th><th>Value</th><th>Safety</th><th>Div.</th>"
                 "<th>Critérios</th><th>Oport. gráfica</th><th>Tendência</th><th>Preço</th>"
-                "<th>Teto médio</th></tr>")
+                "<th>Teto (aj.)</th></tr>")
         rows = "".join(_fmt_row(r) for _, r in selecionados.iterrows())
         agenda = ""
         if "prox_resultado" in selecionados.columns or "ex_dividendo" in selecionados.columns:
@@ -192,11 +192,13 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict) -> str:
                       'dividendos</h2>' + _agenda_table(selecionados))
         body = (f"<table>{head}{rows}</table>"
                 f'<h2 style="font-size:15px;margin:20px 0 6px">Preços-teto (R$)</h2>'
-                f'<p class="sub" style="margin:0 0 8px">Cinco métodos — Bazin (DY 6%), '
-                f'Gordon (dividendos), DCF (lucros), Graham e Lynch/PEGY — mais a '
-                f'<b>Média</b> e a <b>Mediana</b> deles (a mediana é mais robusta a um '
-                f'método que dispara). *Upside vs. mediana. Premissas: k = Selic, g '
-                f'conservador. Estimativas sensíveis às premissas — não são gatilho.</p>'
+                f'<p class="sub" style="margin:0 0 8px">Cinco métodos — Bazin (yield-alvo '
+                f'= Selic), Gordon (dividendos), DCF (lucros), Graham e Lynch/PEGY — mais a '
+                f'<b>Média</b> e a <b>Mediana</b>. <b>Ajust.</b> = mediana com desconto de '
+                f'segurança; *Upside vs. o Ajust. Bazin e Gordon usam o <b>DY médio de ~5 '
+                f'anos</b> (suaviza dividendos extraordinários), não o DY de 12 meses. '
+                f'Premissas: k = Selic, g conservador. Estimativas sensíveis às premissas — '
+                f'não são gatilho.</p>'
                 f"{_teto_table(selecionados)}"
                 f"{agenda}"
                 f"{_teses_block(selecionados)}")

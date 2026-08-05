@@ -31,18 +31,19 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         vol_mult=1.5, require_trend=True, require_volume=True,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
         send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
-        force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5):
+        force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
+        dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
     if limit:
         items = items[:limit]
 
-    from datafeed import get_selic, get_insider_sells
+    from datafeed import get_selic, get_insider_sells, avg_annual_dy
     selic = get_selic()
     print(f"Universo: {len(items)} tickers ({universe}). Selic usada: {selic:.2f}%")
 
-    funds, breaks, origem, mcap, insider = [], {}, {}, {}, {}
+    funds, breaks, origem, mcap, insider, avg_dy = [], {}, {}, {}, {}, {}
     for i, (tk, orig) in enumerate(items, 1):
         origem[tk] = "+".join(orig)
         try:
@@ -59,6 +60,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 breakout_consol_pct=breakout_consol_pct,
                 min_breakout_margin_pct=breakout_margin_pct,
             )
+            if use_avg_dy:
+                avg_dy[tk] = avg_annual_dy(px, dy_years)
         except Exception as e:
             print(f"  [preço] {tk}: {e}")
         try:
@@ -100,13 +103,23 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                       insider_sell_relevante=insider.get(tk),
                       is_financial=fin_map.get(tk, False))
         chk_rows[tk] = ch.as_dict()
+        # DY para o valuation: média de 5 anos (suaviza dividendos extraordinários);
+        # cai no DY corrente se não houver histórico.
+        dy_ceil = avg_dy.get(tk)
+        if dy_ceil is None or (isinstance(dy_ceil, float) and pd.isna(dy_ceil)):
+            dy_ceil = row.get("dy")
         cc = compute_ceilings(row.get("close"), row.get("pl"), row.get("pvp"),
-                              row.get("dy"), row.get("cresc_5a"), selic_pct=selic)
+                              dy_ceil, row.get("cresc_5a"), selic_pct=selic,
+                              bazin_yield=(bazin_yield_pct / 100.0
+                                           if bazin_yield_pct > 0 else None),
+                              safety_discount=teto_desconto_pct / 100.0)
         ceil_rows[tk] = {"teto_bazin": cc.bazin, "teto_graham": cc.graham,
                          "teto_gordon": cc.gordon, "teto_dcf": cc.dcf,
                          "teto_lynch": cc.lynch, "teto_medio": cc.media,
-                         "teto_mediana": cc.mediana, "teto_upside_pct": cc.upside_pct,
-                         "teto_upside_media_pct": cc.upside_media_pct}
+                         "teto_mediana": cc.mediana, "teto_ajustado": cc.ajustado,
+                         "teto_upside_pct": cc.upside_pct,
+                         "teto_upside_media_pct": cc.upside_media_pct,
+                         "dy_teto": round(dy_ceil, 2) if pd.notna(dy_ceil) else None}
     df = df.join(pd.DataFrame(chk_rows).T).join(pd.DataFrame(ceil_rows).T)
 
     # corte fundamentalista (Investment Score) + piso de market cap (>= R$300 mi)
@@ -157,10 +170,12 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
             "passa_checklist", "roe_ge_selic", "roe_ge_setor", "roic_ge_setor",
             "margem_ge_15", "cagr_ge_setor", "divida_ok", "marketcap_ok", "insider_ok",
-            "market_cap", "pl", "pvp", "dy", "roe", "roic", "mrg_liq", "div_liq_ebitda",
+            "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roic", "mrg_liq",
+            "div_liq_ebitda",
             "liq_corr", "div_patrim", "peg", "close", "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_medio", "teto_mediana",
-            "teto_upside_pct", "teto_upside_media_pct", "prox_resultado",
+            "teto_ajustado", "teto_upside_pct", "teto_upside_media_pct",
+            "prox_resultado",
             "ex_dividendo", "ex_tipo", "tese_ia", "strategy",
             "trend", "breakout_level", "pct_to_level", "dist_52w_high_pct",
             "fund_ok", "breakout", "aprovado", "note"]
@@ -254,6 +269,14 @@ def parse_args():
                    help="amplitude máx. da consolidação p/ rompimento (%%, default 10)")
     p.add_argument("--breakout-margin-pct", type=float, default=1.5,
                    help="margem mínima acima do topo p/ validar rompimento (%%, default 1.5)")
+    p.add_argument("--dy-years", type=int, default=5,
+                   help="janela (anos) do DY médio usado no preço-teto (default 5)")
+    p.add_argument("--no-avg-dy", action="store_true",
+                   help="usar o DY de 12 meses no preço-teto (em vez do DY médio de N anos)")
+    p.add_argument("--bazin-yield", type=float, default=0.0,
+                   help="yield-alvo do Bazin em %% (0 = amarrar à Selic, default)")
+    p.add_argument("--teto-desconto", type=float, default=10.0,
+                   help="desconto de segurança sobre o teto consolidado (%%, default 10)")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -281,4 +304,6 @@ if __name__ == "__main__":
         strict_criteria=a.strict_criteria, mktcap_filter=not a.no_mktcap_filter,
         enrich=not a.no_enrich, force_ia=a.force_ia,
         breakout_consol_pct=a.breakout_consol_pct,
-        breakout_margin_pct=a.breakout_margin_pct)
+        breakout_margin_pct=a.breakout_margin_pct,
+        dy_years=a.dy_years, use_avg_dy=not a.no_avg_dy,
+        bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto)

@@ -37,8 +37,11 @@ class Ceilings:
     lynch: float = math.nan
     media: float = math.nan
     mediana: float = math.nan
-    upside_pct: float = math.nan       # mediana/preço - 1 (consolidado robusto)
-    upside_media_pct: float = math.nan  # media/preço - 1
+    ajustado: float = math.nan          # mediana × (1 − desconto): margem de segurança
+    desconto: float = math.nan          # fator de desconto aplicado (ex.: 0.10)
+    upside_pct: float = math.nan        # ajustado/preço − 1 (headline, conservador)
+    upside_media_pct: float = math.nan  # media/preço − 1 (bruto, referência)
+    bazin_yield: float = math.nan       # yield-alvo do Bazin usado (ex.: Selic)
     k: float = math.nan
     g: float = math.nan
 
@@ -52,8 +55,9 @@ def _pos(x) -> bool:
 
 def compute_ceilings(price: float, pl: float, pvp: float, dy_pct: float,
                      growth_pct: Optional[float], selic_pct: float = 15.0,
-                     bazin_yield: float = 0.06, premium: float = 0.0,
-                     g_default: float = 0.04, g_cap: float = 0.06) -> Ceilings:
+                     bazin_yield: Optional[float] = None, premium: float = 0.0,
+                     g_default: float = 0.04, g_cap: float = 0.06,
+                     safety_discount: float = 0.10) -> Ceilings:
     c = Ceilings()
     if not _pos(price):
         return c
@@ -67,25 +71,29 @@ def compute_ceilings(price: float, pl: float, pvp: float, dy_pct: float,
          (isinstance(growth_pct, float) and math.isnan(growth_pct)) and growth_pct > 0) else g_default
     g = min(g, g_cap, k - 0.01)          # conservador e sempre < k
     c.k, c.g = k, g
+    # Bazin amarrado à Selic (default). Se bazin_yield for informado (>0), usa o fixo.
+    byield = bazin_yield if (bazin_yield and bazin_yield > 0) else (selic_pct / 100.0)
+    c.bazin_yield = byield
 
     if _pos(dpa):
-        c.bazin = dpa / bazin_yield
+        c.bazin = dpa / byield
     if _pos(lpa) and _pos(vpa):
         c.graham = math.sqrt(22.5 * lpa * vpa)
     if _pos(dpa) and k > g:
         c.gordon = dpa * (1 + g) / (k - g)
     if _pos(lpa) and k > g:
         c.dcf = lpa * (1 + g) / (k - g)
-    # Lynch/PEGY: P/L justo = crescimento% + DY% (precisa de crescimento positivo)
     if _pos(lpa) and growth_pct is not None and not (
             isinstance(growth_pct, float) and math.isnan(growth_pct)) and growth_pct > 0:
-        fair_pl = min(growth_pct + (dy_pct if _pos(dy_pct) else 0.0), 30.0)  # teto sensato
+        fair_pl = min(growth_pct + (dy_pct if _pos(dy_pct) else 0.0), 30.0)
         c.lynch = lpa * fair_pl
 
     vals = [x for x in (c.bazin, c.graham, c.gordon, c.dcf, c.lynch) if _pos(x)]
     if vals:
         c.media = float(np.mean(vals))
         c.mediana = float(np.median(vals))
-        c.upside_pct = (c.mediana / price - 1) * 100.0
+        c.desconto = safety_discount
+        c.ajustado = c.mediana * (1 - safety_discount)     # margem de segurança
+        c.upside_pct = (c.ajustado / price - 1) * 100.0
         c.upside_media_pct = (c.media / price - 1) * 100.0
     return c

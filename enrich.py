@@ -182,8 +182,9 @@ def _fmt_metrics(r: pd.Series) -> str:
     add("Preços-teto (R$)", f"Bazin {_v(r.get('teto_bazin'))} | Gordon "
         f"{_v(r.get('teto_gordon'))} | DCF {_v(r.get('teto_dcf'))} | Graham "
         f"{_v(r.get('teto_graham'))} | Lynch {_v(r.get('teto_lynch'))} | Média "
-        f"{_v(r.get('teto_medio'))} | Mediana {_v(r.get('teto_mediana'))} | Upside vs "
-        f"mediana {_v(r.get('teto_upside_pct'),1)}%")
+        f"{_v(r.get('teto_medio'))} | Mediana {_v(r.get('teto_mediana'))} | Ajustado "
+        f"(c/ margem de segurança) {_v(r.get('teto_ajustado'))} | Upside vs ajustado "
+        f"{_v(r.get('teto_upside_pct'),1)}%")
     add("Próximo resultado", None if str(r.get("prox_resultado") or "n/d") == "n/d"
         else r.get("prox_resultado"))
     add("Ex-dividendo", None if str(r.get("ex_dividendo") or "n/d") == "n/d" else
