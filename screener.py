@@ -32,7 +32,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
         send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
-        dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0):
+        dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
+        teto_outlier_mult=2.5):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
@@ -112,11 +113,14 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                               dy_ceil, row.get("cresc_5a"), selic_pct=selic,
                               bazin_yield=(bazin_yield_pct / 100.0
                                            if bazin_yield_pct > 0 else None),
-                              safety_discount=teto_desconto_pct / 100.0)
+                              safety_discount=teto_desconto_pct / 100.0,
+                              outlier_mult=teto_outlier_mult,
+                              is_financial=fin_map.get(tk, False))
         ceil_rows[tk] = {"teto_bazin": cc.bazin, "teto_graham": cc.graham,
                          "teto_gordon": cc.gordon, "teto_dcf": cc.dcf,
                          "teto_lynch": cc.lynch, "teto_medio": cc.media,
                          "teto_mediana": cc.mediana, "teto_ajustado": cc.ajustado,
+                         "teto_n_metodos": cc.n_metodos,
                          "teto_upside_pct": cc.upside_pct,
                          "teto_upside_media_pct": cc.upside_media_pct,
                          "dy_teto": round(dy_ceil, 2) if pd.notna(dy_ceil) else None}
@@ -174,8 +178,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "div_liq_ebitda",
             "liq_corr", "div_patrim", "peg", "close", "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_medio", "teto_mediana",
-            "teto_ajustado", "teto_upside_pct", "teto_upside_media_pct",
-            "prox_resultado",
+            "teto_ajustado", "teto_n_metodos", "teto_upside_pct",
+            "teto_upside_media_pct", "prox_resultado",
             "ex_dividendo", "ex_tipo", "tese_ia", "strategy",
             "trend", "breakout_level", "pct_to_level", "dist_52w_high_pct",
             "fund_ok", "breakout", "aprovado", "note"]
@@ -277,6 +281,9 @@ def parse_args():
                    help="yield-alvo do Bazin em %% (0 = amarrar à Selic, default)")
     p.add_argument("--teto-desconto", type=float, default=10.0,
                    help="desconto de segurança sobre o teto consolidado (%%, default 10)")
+    p.add_argument("--teto-outlier-mult", type=float, default=2.5,
+                   help="descarta método além de Nx a mediana antes de consolidar "
+                        "(default 2.5; 0 desliga)")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -306,4 +313,5 @@ if __name__ == "__main__":
         breakout_consol_pct=a.breakout_consol_pct,
         breakout_margin_pct=a.breakout_margin_pct,
         dy_years=a.dy_years, use_avg_dy=not a.no_avg_dy,
-        bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto)
+        bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto,
+        teto_outlier_mult=a.teto_outlier_mult)

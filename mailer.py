@@ -197,8 +197,10 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict) -> str:
                 f'<b>Média</b> e a <b>Mediana</b>. <b>Ajust.</b> = mediana com desconto de '
                 f'segurança; *Upside vs. o Ajust. Bazin e Gordon usam o <b>DY médio de ~5 '
                 f'anos</b> (suaviza dividendos extraordinários), não o DY de 12 meses. '
-                f'Premissas: k = Selic, g conservador. Estimativas sensíveis às premissas — '
-                f'não são gatilho.</p>'
+                f'Premissas: k = Selic, g conservador. Método muito fora (além de ~2,5× a '
+                f'mediana, ex.: Lynch disparado) é descartado do consolidado. Em '
+                f'bancos/seguros, Graham e Lynch também ficam fora do consolidado (pouco '
+                f'confiáveis no setor). Estimativas sensíveis às premissas — não são gatilho.</p>'
                 f"{_teto_table(selecionados)}"
                 f"{agenda}"
                 f"{_teses_block(selecionados)}")

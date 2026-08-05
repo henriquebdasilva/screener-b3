@@ -42,6 +42,7 @@ class Ceilings:
     upside_pct: float = math.nan        # ajustado/preço − 1 (headline, conservador)
     upside_media_pct: float = math.nan  # media/preço − 1 (bruto, referência)
     bazin_yield: float = math.nan       # yield-alvo do Bazin usado (ex.: Selic)
+    n_metodos: int = 0                  # métodos que entraram no consolidado (pós-outlier)
     k: float = math.nan
     g: float = math.nan
 
@@ -57,7 +58,9 @@ def compute_ceilings(price: float, pl: float, pvp: float, dy_pct: float,
                      growth_pct: Optional[float], selic_pct: float = 15.0,
                      bazin_yield: Optional[float] = None, premium: float = 0.0,
                      g_default: float = 0.04, g_cap: float = 0.06,
-                     safety_discount: float = 0.10) -> Ceilings:
+                     safety_discount: float = 0.10,
+                     outlier_mult: float = 2.5,
+                     is_financial: bool = False) -> Ceilings:
     c = Ceilings()
     if not _pos(price):
         return c
@@ -88,8 +91,20 @@ def compute_ceilings(price: float, pl: float, pvp: float, dy_pct: float,
         fair_pl = min(growth_pct + (dy_pct if _pos(dy_pct) else 0.0), 30.0)
         c.lynch = lpa * fair_pl
 
-    vals = [x for x in (c.bazin, c.graham, c.gordon, c.dcf, c.lynch) if _pos(x)]
+    # Para bancos/seguros/holdings, Graham (subestima) e Lynch (infla) não são confiáveis
+    # -> não entram no consolidado (mas seguem calculados e visíveis na tabela).
+    if is_financial:
+        candidates = (c.bazin, c.gordon, c.dcf)
+    else:
+        candidates = (c.bazin, c.graham, c.gordon, c.dcf, c.lynch)
+    vals = [x for x in candidates if _pos(x)]
     if vals:
+        med0 = float(np.median(vals))
+        # descarta métodos muito fora (ex.: Lynch disparado): fora de [1/m, m]×mediana
+        if outlier_mult and outlier_mult > 0 and med0 > 0 and len(vals) >= 3:
+            kept = [x for x in vals if (med0 / outlier_mult) <= x <= med0 * outlier_mult]
+            vals = kept if len(kept) >= 2 else vals
+        c.n_metodos = len(vals)
         c.media = float(np.mean(vals))
         c.mediana = float(np.median(vals))
         c.desconto = safety_discount
