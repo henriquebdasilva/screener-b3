@@ -23,7 +23,7 @@ concurrency:
 jobs:
   screen:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -53,6 +53,7 @@ jobs:
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           AI_MAX_CALLS: ${{ secrets.AI_MAX_CALLS }}
           AI_MAX_TOKENS: ${{ secrets.AI_MAX_TOKENS }}
+          AI_SLEEP: ${{ secrets.AI_SLEEP }}
           AI_DEBUG: ${{ secrets.AI_DEBUG }}
           SELIC: ${{ secrets.SELIC }}
           INSIDER_CHECK: ${{ secrets.INSIDER_CHECK }}
