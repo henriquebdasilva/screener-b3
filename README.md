@@ -159,6 +159,36 @@ respeitar a cota). Sem a chave, as teses ficam vazias e o resto roda igual. Há 
 `reports/cache_tese.json` (não repete o mesmo papel no mesmo dia). Desligue tudo com
 `--no-enrich`. A agenda e as teses aparecem no corpo do e-mail e na planilha.
 
+### Solução de problemas da tese por IA
+
+**Precisa criar alguma secret nova?** Não. A única essencial é `GEMINI_API_KEY`. As demais
+são opcionais e têm valores-padrão no código:
+
+- `AI_MAX_TOKENS` — tamanho da resposta. Padrão **1024** (bom para 8–10 frases). Aumente
+  para `1536`/`2048` se quiser teses mais longas.
+- `AI_DEBUG` — defina `1` **temporariamente** para ver no log a resposta bruta da API e
+  avisos de corte por `MAX_TOKENS`. Remova depois.
+- `GEMINI_MODEL` — use só o id, ex.: `gemini-2.5-flash` (sem `models/`, sem aspas, sem
+  espaços). O código já sanitiza esses casos; se vier inválido/vazio, cai num default.
+- `AI_MAX_CALLS` — padrão 40; teto de chamadas por execução (respeita a cota do free tier).
+
+**Erros comuns no log (linhas `[IA] ...`):**
+
+- `chave: VAZIA` → o secret não chegou ao processo. Confira o nome exato `GEMINI_API_KEY` e
+  se o workflow injeta `GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}` no `env:` do passo
+  (secrets não viram variáveis de ambiente sozinhos).
+- `FALHOU -> HTTP 400: ... unexpected model name format` → valor de `GEMINI_MODEL` malformado
+  (ex.: com `models/`). Corrija o secret ou confie na limpeza automática.
+- `HTTP 404` → modelo inexistente; use um id atual do AI Studio. `HTTP 400` → chave inválida.
+  `HTTP 429` → cota do minuto/dia estourada.
+- Teses **truncadas** ou com eco de instruções → resolvido desligando o *thinking*
+  (`thinkingBudget: 0`) e reforçando o prompt; se persistir, suba `AI_MAX_TOKENS`.
+
+**Cache (importante):** as teses ficam em `reports/cache_tese.json` com a **data** na chave.
+Rodar de novo **no mesmo dia** reaproveita as teses já geradas (inclusive versões ruins de
+um teste anterior). Para regenerar **hoje**, **apague `reports/cache_tese.json`** do
+repositório antes de rodar (ou rode no dia seguinte, quando a chave do cache muda de data).
+
 ## Ajustes comuns
 
 - Mudar pesos do Investment Score → `scoring.py` (dict `W`).
