@@ -57,6 +57,8 @@ class BreakoutResult:
     pct_to_level: float = np.nan     # (close/level - 1)*100
     dist_52w_high_pct: float = np.nan
     vol_ratio: float = np.nan
+    above_sma200: bool = False
+    sma50_gt_sma200: bool = False
     days_since_breakout: int = -1
     note: str = ""
 
@@ -75,11 +77,16 @@ def is_consolidated_flexible(df, percentage, min_days, max_days) -> bool:
     return False
 
 
-def is_breaking_out(df, percentage, min_days, max_days) -> bool:
+def _sma(s, n):
+    return s.rolling(n, min_periods=n).mean()
+
+
+def is_breaking_out(df, percentage, min_days, max_days, margin_pct=0.0) -> bool:
     last_close = df["Close"].iloc[-1]
     if is_consolidated_flexible(df, percentage, min_days, max_days):
         recent = df["Close"].iloc[-16:-1]
-        if len(recent) and last_close > recent.max():
+        # margem mínima: fechar acima do topo por pelo menos margin_pct%
+        if len(recent) and last_close > recent.max() * (1 + margin_pct / 100.0):
             return True
     return False
 
@@ -159,18 +166,29 @@ def is_pivoting(df, percentage, min_days, max_days) -> bool:
 
 
 # ------------------ API pública ------------------
-def detect_breakout(df: pd.DataFrame, ticker: str = "", **_ignored) -> BreakoutResult:
-    """Aplica a lógica do repositório e devolve o resultado + metadados p/ o relatório.
+def detect_breakout(df: pd.DataFrame, ticker: str = "",
+                    breakout_consol_pct: float = 10.0,   # consolidação mais estreita (era 15)
+                    min_breakout_margin_pct: float = 1.5,  # romper o topo por ≥ isso
+                    require_volume: bool = True, vol_mult: float = 1.5,
+                    require_trend: bool = True,
+                    pivot_consol_pct: float = 20.0,
+                    **_ignored) -> BreakoutResult:
+    """Rompimento/pivô com filtros de assertividade sobre o algoritmo original.
 
-    `**_ignored` mantém compatibilidade com chamadas antigas (lookback, vol_mult...).
+    ROMPIMENTO exige, além de consolidação + novo topo:
+      • margem mínima (fechar acima do topo de 15 dias por ≥ `min_breakout_margin_pct`%);
+      • volume do dia ≥ `vol_mult`× média de 20 (se `require_volume`);
+      • tendência de alta: preço > MM200 e MM50 > MM200 (se `require_trend`).
+    Desligue os filtros para reproduzir o comportamento original do repositório.
     """
     res = BreakoutResult(ticker=ticker)
     if df is None or len(df) < 40:
         res.note = "histórico insuficiente"
         return res
 
-    res.close = float(df["Close"].iloc[-1])
-    recent = df["Close"].iloc[-16:-1]
+    close = df["Close"]
+    res.close = float(close.iloc[-1])
+    recent = close.iloc[-16:-1]
     if len(recent):
         res.breakout_level = float(recent.max())
         res.pct_to_level = (res.close / res.breakout_level - 1) * 100.0
@@ -186,18 +204,40 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "", **_ignored) -> BreakoutR
         pass
 
     res.trend = is_uptrend(df)
+    sma50 = _sma(close, 50).iloc[-1]
+    sma200 = _sma(close, 200).iloc[-1]
+    res.above_sma200 = bool(pd.notna(sma200) and res.close > sma200)
+    res.sma50_gt_sma200 = bool(pd.notna(sma50) and pd.notna(sma200) and sma50 > sma200)
 
-    breakout = is_breaking_out(
-        df, NARROW_VARIATION_PERCENTAGE_BREAKOUT,
-        MIN_DAYS_BEFORE_WINDOW_BREAKOUT, MAX_DAYS_BEFORE_WINDOW_BREAKOUT)
+    # ---- ROMPIMENTO (consolidação estreita + margem + volume + tendência) ----
+    broke_raw = is_breaking_out(
+        df, breakout_consol_pct, MIN_DAYS_BEFORE_WINDOW_BREAKOUT,
+        MAX_DAYS_BEFORE_WINDOW_BREAKOUT, margin_pct=min_breakout_margin_pct)
+    vol_ok = (not require_volume) or (pd.notna(res.vol_ratio) and res.vol_ratio >= vol_mult)
+    trend_ok = (not require_trend) or (res.above_sma200 and res.sma50_gt_sma200)
+    breakout = bool(broke_raw and vol_ok and trend_ok)
+
+    # ---- PIVÔ (mantém a lógica original; já exige tendência não-baixa) ----
     pivot = (res.trend != EM_BAIXA_STR) and is_pivoting(
-        df, NARROW_VARIATION_PERCENTAGE_PIVOT,
-        MIN_DAYS_BEFORE_WINDOW_PIVOT, MAX_DAYS_BEFORE_WINDOW_PIVOT)
+        df, pivot_consol_pct, MIN_DAYS_BEFORE_WINDOW_PIVOT,
+        MAX_DAYS_BEFORE_WINDOW_PIVOT)
 
     if breakout:
         res.signal, res.strategy, res.days_since_breakout = True, BREAKOUT_STR, 0
+        res.note = (f"Rompimento (vol x{res.vol_ratio:.1f}, +{res.pct_to_level:.1f}% "
+                    f"do topo, MM50>MM200)")
     elif pivot:
         res.signal, res.strategy = True, PIVOT_STR
-    res.note = res.strategy if res.signal else (
-        f"sem sinal ({res.pct_to_level:+.1f}% do topo; {res.trend})")
+        res.note = "Pivô de alta"
+    else:
+        motivos = []
+        if broke_raw and not vol_ok:
+            motivos.append(f"volume baixo (x{res.vol_ratio:.1f})"
+                           if pd.notna(res.vol_ratio) else "sem volume")
+        if broke_raw and not trend_ok:
+            motivos.append("fora de tendência de alta (MM200)")
+        if not broke_raw:
+            motivos.append(f"sem novo topo ({res.pct_to_level:+.1f}%)")
+        res.note = f"sem sinal ({res.trend}" + (
+            "; " + ", ".join(motivos) if motivos else "") + ")"
     return res

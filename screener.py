@@ -31,7 +31,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         vol_mult=1.5, require_trend=True, require_volume=True,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
         send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
-        force_ia=False):
+        force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
@@ -54,9 +54,10 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         try:
             px = get_prices(tk)
             breaks[tk] = detect_breakout(
-                px, ticker=tk, lookback=lookback, vol_mult=vol_mult,
+                px, ticker=tk, vol_mult=vol_mult,
                 require_trend=require_trend, require_volume=require_volume,
-                require_contraction=require_contraction,
+                breakout_consol_pct=breakout_consol_pct,
+                min_breakout_margin_pct=breakout_margin_pct,
             )
         except Exception as e:
             print(f"  [preço] {tk}: {e}")
@@ -247,7 +248,12 @@ def parse_args():
     g.add_argument("--min-invest", type=float, default=None,
                    help="nota mínima de Investment (0-100) em vez de quantil")
     p.add_argument("--lookback", type=int, default=20)
-    p.add_argument("--vol-mult", type=float, default=1.5)
+    p.add_argument("--vol-mult", type=float, default=1.5,
+                   help="volume mínimo no rompimento, em x da média de 20 dias")
+    p.add_argument("--breakout-consol-pct", type=float, default=10.0,
+                   help="amplitude máx. da consolidação p/ rompimento (%%, default 10)")
+    p.add_argument("--breakout-margin-pct", type=float, default=1.5,
+                   help="margem mínima acima do topo p/ validar rompimento (%%, default 1.5)")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -273,4 +279,6 @@ if __name__ == "__main__":
         require_volume=not a.no_volume, require_contraction=a.require_contraction,
         sleep=a.sleep, outdir=a.outdir, limit=a.limit, send_email=not a.no_email,
         strict_criteria=a.strict_criteria, mktcap_filter=not a.no_mktcap_filter,
-        enrich=not a.no_enrich, force_ia=a.force_ia)
+        enrich=not a.no_enrich, force_ia=a.force_ia,
+        breakout_consol_pct=a.breakout_consol_pct,
+        breakout_margin_pct=a.breakout_margin_pct)
