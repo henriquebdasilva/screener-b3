@@ -184,3 +184,16 @@ def consistency(row, listed_y, div_ge5, ni_annual, ni_quarterly,
     c.n_ok = sum(1 for f in ap if f)
     c.score = (100.0 * c.n_ok / c.n_aplic) if ap else math.nan
     return c
+
+
+def net_debt_to_equity(pvp, ev_ebitda, div_liq_ebitda):
+    """Dív.Líq/Patrim DERIVADA dos índices do fundamentus (sem chamada extra):
+        = (Dív.Líq/EBITDA × P/VP) / (EV/EBITDA − Dív.Líq/EBITDA).
+    Retorna None quando instável (EBITDA implícito ~0/negativo, dados ausentes)."""
+    pv = _num(pvp); ev = _num(ev_ebitda); dl = _num(div_liq_ebitda)
+    if pv is None or pv <= 0 or ev is None or dl is None:
+        return None
+    denom = ev - dl                     # = ValorDeMercado/EBITDA (>0 se EBITDA>0)
+    if denom <= 0.1:
+        return None
+    return dl * pv / denom
