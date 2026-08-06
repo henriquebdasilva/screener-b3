@@ -23,7 +23,7 @@ import pandas as pd
 
 from datafeed import Fundamentals
 
-W = {"quality": 0.35, "value": 0.30, "safety": 0.20, "dividend": 0.15}
+W = {"quality": 0.45, "value": 0.25, "safety": 0.20, "dividend": 0.10}
 
 
 def _rank_score(s: pd.Series, higher_better: bool) -> pd.Series:

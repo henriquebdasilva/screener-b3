@@ -140,15 +140,25 @@ python screener.py --universe both
 Além do Investment Score, cada papel passa por um **checklist** (colunas no CSV/planilha,
 valores Sim/Não/n/d):
 
-1. **ROE ≥ Selic** (Selic vinda da API do Banco Central — série 432; override por env `SELIC`).
+1. **ROE ou ROIC ≥ Selic** — passa se **qualquer um** dos dois atingir a Selic (ativo por
+   padrão; desligue com `--no-roe-roic-selic`). A Selic vem da API do BC (série 432; override
+   por env `SELIC`).
 2. **ROE ≥ média do setor**; 3. **ROIC ≥ média do setor**; 5. **CAGR 5a ≥ média do setor**
    (média do setor calculada **dentro do universo varrido** — limitação honesta).
 4. **Margem líquida ≥ 15%** (n/a p/ bancos/seguros).
 6. **Dív.Líq/EBITDA < 3 e ≤ média do setor** (n/a p/ bancos/seguros).
-7. **Market cap ≥ R$ 300 mi** (piso; papéis abaixo saem da seleção, salvo `--no-mktcap-filter`).
+7. **Market cap ≥ R$ 500 mi** (piso; abaixo saem da seleção; ajuste com `--min-marketcap` em R$ milhões; `--no-mktcap-filter` desliga).
 8. **Sem venda expressiva de insiders no último ano** — raspagem *best-effort* da página de
    insiders do Fundamentus; frágil, então em dúvida vira `n/d` e não pesa. Desligue com env
    `INSIDER_CHECK=0`.
+
+Além do checklist, há um **filtro absoluto de alavancagem**: não-financeiras com
+**Dív.Líq/EBITDA acima de 3,5** saem da seleção (coluna `alavancagem_ok`; flag
+`--max-leverage`, 0 desliga; financeiras não são afetadas).
+
+O **Investment Score** pondera Quality **0,45**, Value 0,25, Safety 0,20 e Dividend 0,10
+(mais peso em qualidade, menos em preço/dividendo — reduz o viés a small caps "baratas").
+Os pesos ficam no dict `W` de `scoring.py`.
 
 `criterios_ok / criterios_aplicaveis` conta quantos foram cumpridos. Por padrão o checklist
 é **informativo** (não elimina, além do piso de market cap). Para exigir **todos** os

@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-MARKETCAP_MIN = 300_000_000.0
+MARKETCAP_MIN = 500_000_000.0
 MARGEM_MIN = 15.0
 DIVIDA_MAX = 3.0
 
@@ -52,7 +52,7 @@ def sector_means(df: pd.DataFrame) -> dict:
 
 @dataclass
 class Checklist:
-    roe_ge_selic: object = None
+    roe_roic_ge_selic: object = None
     roe_ge_setor: object = None
     roic_ge_setor: object = None
     margem_ge_15: object = None
@@ -76,14 +76,26 @@ def _ge(a, b):
     return bool(a >= b)
 
 
+def _roe_or_roic_ge(roe, roic, bar) -> object:
+    """True se ROE >= bar OU ROIC >= bar; False se algum disponível e nenhum atinge;
+    None se ambos indisponíveis."""
+    bar = _num(bar)
+    vals = [x for x in (_num(roe), _num(roic)) if x is not None]
+    if bar is None or not vals:
+        return None
+    return bool(any(v >= bar for v in vals))
+
+
 def evaluate(row: pd.Series, smeans: dict, selic_pct: float,
              market_cap=None, insider_sell_relevante=None,
-             is_financial: bool = False) -> Checklist:
+             is_financial: bool = False, require_roe_roic_selic: bool = True,
+             marketcap_min: float = MARKETCAP_MIN) -> Checklist:
     c = Checklist()
     setor = row.get("setor", "") or ""
     sm = smeans.get(setor, {})
 
-    c.roe_ge_selic = _ge(row.get("roe"), selic_pct)
+    c.roe_roic_ge_selic = (_roe_or_roic_ge(row.get("roe"), row.get("roic"), selic_pct)
+                           if require_roe_roic_selic else None)
     c.roe_ge_setor = _ge(row.get("roe"), sm.get("roe"))
     c.roic_ge_setor = _ge(row.get("roic"), sm.get("roic"))
     c.cagr_ge_setor = _ge(row.get("cresc_5a"), sm.get("cresc_5a"))
@@ -104,14 +116,14 @@ def evaluate(row: pd.Series, smeans: dict, selic_pct: float,
             c.divida_ok = bool(d < DIVIDA_MAX and d <= dmed)
 
     mc = _num(market_cap)
-    c.marketcap_ok = None if mc is None else bool(mc >= MARKETCAP_MIN)
+    c.marketcap_ok = None if mc is None else bool(mc >= marketcap_min)
 
     if insider_sell_relevante is None:
         c.insider_ok = None                # n/d
     else:
         c.insider_ok = (not bool(insider_sell_relevante))
 
-    flags = [c.roe_ge_selic, c.roe_ge_setor, c.roic_ge_setor, c.margem_ge_15,
+    flags = [c.roe_roic_ge_selic, c.roe_ge_setor, c.roic_ge_setor, c.margem_ge_15,
              c.cagr_ge_setor, c.divida_ok, c.marketcap_ok, c.insider_ok]
     aplicaveis = [f for f in flags if f is not None]
     c.criterios_aplicaveis = len(aplicaveis)

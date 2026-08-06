@@ -167,7 +167,7 @@ def _fmt_metrics(r: pd.Series) -> str:
     add("DY", None if _v(r.get("dy")) is None else f"{_v(r.get('dy'))}%")
     add("Market cap (R$)", _v(r.get("market_cap"), 0))
     # checklist item a item
-    chk = (f"ROE≥Selic {_flag(r.get('roe_ge_selic'))} | ROE≥setor "
+    chk = (f"ROE ou ROIC≥Selic {_flag(r.get('roe_roic_ge_selic'))} | ROE≥setor "
            f"{_flag(r.get('roe_ge_setor'))} | ROIC≥setor {_flag(r.get('roic_ge_setor'))} | "
            f"margem≥15% {_flag(r.get('margem_ge_15'))} | CAGR≥setor "
            f"{_flag(r.get('cagr_ge_setor'))} | Dív.Líq/EBITDA<3 e ≤setor "

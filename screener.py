@@ -33,7 +33,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
-        teto_outlier_mult=2.5):
+        teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.5,
+        min_marketcap=500_000_000.0):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
@@ -102,7 +103,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         row = df.loc[tk]
         ch = evaluate(row, smeans, selic, market_cap=mcap.get(tk),
                       insider_sell_relevante=insider.get(tk),
-                      is_financial=fin_map.get(tk, False))
+                      is_financial=fin_map.get(tk, False),
+                      require_roe_roic_selic=require_roe_roic_selic,
+                      marketcap_min=min_marketcap)
         chk_rows[tk] = ch.as_dict()
         # DY para o valuation: média de 5 anos (suaviza dividendos extraordinários);
         # cai no DY corrente se não houver histórico.
@@ -135,6 +138,15 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     fund_ok = fund_ok.fillna(False)
     if mktcap_filter:
         fund_ok = fund_ok & (df["marketcap_ok"] != False)   # noqa: E712 (mantém n/d)
+    # remove empresas muito endividadas (Dív.Líq/EBITDA > teto), exceto financeiras
+    if max_leverage and max_leverage > 0:
+        fin_series = pd.Series({t: fin_map.get(t, False) for t in df.index})
+        lev = df["div_liq_ebitda"]
+        muito_endividada = (~fin_series) & lev.notna() & (lev > max_leverage)
+        df["alavancagem_ok"] = ~muito_endividada
+        fund_ok = fund_ok & (~muito_endividada)
+    else:
+        df["alavancagem_ok"] = True
     if strict_criteria:
         fund_ok = fund_ok & (df["passa_checklist"] == True)  # noqa: E712
     df["fund_ok"] = fund_ok
@@ -172,8 +184,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     cols = ["origem", "setor", "investment", "quality", "value", "safety", "dividend",
             "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
-            "passa_checklist", "roe_ge_selic", "roe_ge_setor", "roic_ge_setor",
+            "passa_checklist", "roe_roic_ge_selic", "roe_ge_setor", "roic_ge_setor",
             "margem_ge_15", "cagr_ge_setor", "divida_ok", "marketcap_ok", "insider_ok",
+            "alavancagem_ok",
             "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roic", "mrg_liq",
             "div_liq_ebitda",
             "liq_corr", "div_patrim", "peg", "close", "teto_bazin", "teto_gordon",
@@ -284,6 +297,13 @@ def parse_args():
     p.add_argument("--teto-outlier-mult", type=float, default=2.5,
                    help="descarta método além de Nx a mediana antes de consolidar "
                         "(default 2.5; 0 desliga)")
+    p.add_argument("--no-roe-roic-selic", action="store_true",
+                   help="desativa o critério 'ROE ou ROIC >= Selic' (ativo por padrão)")
+    p.add_argument("--max-leverage", type=float, default=3.5,
+                   help="remove não-financeiras com Dív.Líq/EBITDA acima disso "
+                        "(default 3.5; 0 desliga)")
+    p.add_argument("--min-marketcap", type=float, default=500.0,
+                   help="piso de market cap em R$ milhões (default 500)")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -314,4 +334,6 @@ if __name__ == "__main__":
         breakout_margin_pct=a.breakout_margin_pct,
         dy_years=a.dy_years, use_avg_dy=not a.no_avg_dy,
         bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto,
-        teto_outlier_mult=a.teto_outlier_mult)
+        teto_outlier_mult=a.teto_outlier_mult,
+        require_roe_roic_selic=not a.no_roe_roic_selic, max_leverage=a.max_leverage,
+        min_marketcap=a.min_marketcap * 1_000_000)
