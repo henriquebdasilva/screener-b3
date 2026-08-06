@@ -35,7 +35,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.5,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
-        max_net_debt_equity=1.5, split_by_origin=True, group_top=0.30):
+        max_net_debt_equity=1.5, split_by_origin=True, group_top=None):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
@@ -170,12 +170,13 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         lambda o: "BOVA11" if "BOVA11" in str(o) else "SMALL11")
 
     # corte fundamentalista (Investment Score)
+    frac = group_top if (group_top is not None) else top_quantile   # fração por grupo
     if min_invest is not None:
         fund_ok = df["investment"] >= float(min_invest)
     elif split_by_origin:
-        # mantém os melhores `group_top` (ex.: 30%) DENTRO de cada grupo
+        # mantém os melhores `frac` (ex.: 0.5 = 50%) DENTRO de cada grupo
         thr = df.groupby("grupo")["investment"].transform(
-            lambda s: s.quantile(1 - group_top))
+            lambda s: s.quantile(1 - frac))
         fund_ok = df["investment"] >= thr
     else:
         thr = df["investment"].quantile(1 - top_quantile)
@@ -292,7 +293,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             humor = market_mood(full)               # % alta/baixa por índice e setor
             html = build_html(selecionados, hoje, dict(universe=universe,
                               top_quantile=top_quantile, min_invest=min_invest),
-                              market=resumo, mood=humor)
+                              market=resumo, mood=humor,
+                              group_pct=(int(round(frac * 100)) if split_by_origin
+                                         and min_invest is None else None))
             n_graf = int((selecionados["oportunidade_grafica"] != "Não").sum()) \
                 if len(selecionados) else 0
             subject = (f"[Screener B3] {len(selecionados)} papéis nos critérios "
@@ -378,8 +381,9 @@ def parse_args():
     p.add_argument("--max-net-debt-equity", type=float, default=1.5,
                    help="remove não-financeiras com Dív.Líq/Patrim (derivada) acima disso "
                         "(default 1.5; 0 desliga)")
-    p.add_argument("--group-top", type=float, default=0.30,
-                   help="fração dos melhores por grupo BOVA11/SMALL11 (default 0.30 = 30%%)")
+    p.add_argument("--group-top", type=float, default=None,
+                   help="override do percentil por grupo BOVA11/SMALL11 "
+                        "(default: usa --top-quantile)")
     p.add_argument("--no-split", action="store_true",
                    help="não separar por grupo; usa --top-quantile no universo inteiro")
     p.add_argument("--no-trend", action="store_true")

@@ -278,8 +278,9 @@ def _group_block(df: pd.DataFrame, title: str) -> str:
 
 
 def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
-               market: dict = None, mood: dict = None) -> str:
+               market: dict = None, mood: dict = None, group_pct: int = None) -> str:
     topo = _market_block(market) + _mood_block(mood)
+    suf = f" ({group_pct}% de maior score)" if group_pct else ""
     if selecionados is None or selecionados.empty:
         body = topo + '<p class="empty">Nenhum papel passou no corte fundamentalista hoje.</p>'
         n_graf = 0
@@ -296,8 +297,8 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
         small = selecionados[grp == "SMALL11"]
         body = (
             topo
-            + _group_block(bova, "BOVA11 · Ibovespa (30% de maior score)")
-            + _group_block(small, "SMALL11 · Small Caps (30% de maior score)")
+            + _group_block(bova, f"BOVA11 · Ibovespa{suf}")
+            + _group_block(small, f"SMALL11 · Small Caps{suf}")
             + f'<p class="sub" style="margin:14px 0 0">{_TETO_NOTE}</p>'
             + _teses_block(selecionados)
         )
