@@ -28,6 +28,32 @@ from typing import Optional
 import numpy as np
 
 
+def sustainable_growth(roe_pct, dy_pct, pl, cap: float = 15.0):
+    """Crescimento sustentável g = ROE × (1 − payout), em %.
+
+    payout = DPA/LPA = (DY% × preço) / (preço/PL) = DY%/100 × PL.
+    Usa NÍVEIS (não razão entre lucros) — sem raiz de negativo. Retorna None quando não é
+    confiável (ROE ≤ 0, payout fora de [0,1], dados ausentes), p/ o chamador cair no
+    CAGR de receita. `cap` limita o resultado (evita ROE/alavancagem atípicos distorcerem).
+    """
+    def _f(x):
+        try:
+            x = float(x)
+            return x if not math.isnan(x) else None
+        except Exception:
+            return None
+    roe, dy, pl = _f(roe_pct), _f(dy_pct), _f(pl)
+    if roe is None or roe <= 0:
+        return None
+    payout = (dy / 100.0) * pl if (dy is not None and dy > 0 and pl is not None and pl > 0) else 0.0
+    if payout < 0 or payout > 1:
+        return None
+    g = roe * (1 - payout)
+    if cap is not None:
+        g = min(g, cap)
+    return g
+
+
 @dataclass
 class Ceilings:
     bazin: float = math.nan

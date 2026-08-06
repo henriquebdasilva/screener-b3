@@ -34,18 +34,20 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.5,
-        min_marketcap=500_000_000.0):
+        min_marketcap=500_000_000.0, consistency_weight=0.15):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
     if limit:
         items = items[:limit]
 
-    from datafeed import get_selic, get_insider_sells, avg_annual_dy
+    from datafeed import (get_selic, get_insider_sells, avg_annual_dy,
+                          listed_years, paid_dividends_ge, get_net_income_history)
     selic = get_selic()
     print(f"Universo: {len(items)} tickers ({universe}). Selic usada: {selic:.2f}%")
 
     funds, breaks, origem, mcap, insider, avg_dy = [], {}, {}, {}, {}, {}
+    listed_y, div_ge5, profit_hist = {}, {}, {}
     for i, (tk, orig) in enumerate(items, 1):
         origem[tk] = "+".join(orig)
         try:
@@ -64,15 +66,26 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             )
             if use_avg_dy:
                 avg_dy[tk] = avg_annual_dy(px, dy_years)
+            listed_y[tk] = listed_years(px)
+            div_ge5[tk] = paid_dividends_ge(px, 5, 5.0)
         except Exception as e:
             print(f"  [preço] {tk}: {e}")
         try:
             insider[tk] = get_insider_sells(tk)
         except Exception:
             insider[tk] = None
+        try:
+            profit_hist[tk] = get_net_income_history(tk)     # (anual, trimestral)
+        except Exception:
+            profit_hist[tk] = ([], [])
         if i % 10 == 0:
             print(f"  ...{i}/{len(items)}")
         time.sleep(sleep)
+
+    # DY médio (5 anos) alimenta o score de Dividend e o crescimento sustentável (PEG)
+    for f in funds:
+        if use_avg_dy and pd.notna(avg_dy.get(f.ticker, float("nan"))):
+            f.dy_medio = avg_dy[f.ticker]
 
     scores = score_universe(funds)
     if scores.empty:
@@ -112,8 +125,12 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         dy_ceil = avg_dy.get(tk)
         if dy_ceil is None or (isinstance(dy_ceil, float) and pd.isna(dy_ceil)):
             dy_ceil = row.get("dy")
+        # crescimento p/ o valuation: sustentável (ROE×(1−payout)); fallback CAGR receita
+        g_val = row.get("growth_est")
+        if g_val is None or (isinstance(g_val, float) and pd.isna(g_val)):
+            g_val = row.get("cresc_5a")
         cc = compute_ceilings(row.get("close"), row.get("pl"), row.get("pvp"),
-                              dy_ceil, row.get("cresc_5a"), selic_pct=selic,
+                              dy_ceil, g_val, selic_pct=selic,
                               bazin_yield=(bazin_yield_pct / 100.0
                                            if bazin_yield_pct > 0 else None),
                               safety_discount=teto_desconto_pct / 100.0,
@@ -129,7 +146,25 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                          "dy_teto": round(dy_ceil, 2) if pd.notna(dy_ceil) else None}
     df = df.join(pd.DataFrame(chk_rows).T).join(pd.DataFrame(ceil_rows).T)
 
-    # corte fundamentalista (Investment Score) + piso de market cap (>= R$300 mi)
+    # ---- Consistência (8 critérios) e mescla na nota ----
+    from criteria import consistency as _consistency
+    cons_rows = {}
+    for tk in df.index:
+        ni = profit_hist.get(tk, ([], []))
+        cc2 = _consistency(df.loc[tk], listed_y.get(tk), div_ge5.get(tk),
+                           ni[0], ni[1], is_financial=fin_map.get(tk, False))
+        cons_rows[tk] = cc2.as_dict()
+    df = df.join(pd.DataFrame(cons_rows).T.rename(columns={"score": "consistencia"}))
+    df["investment_base"] = df["investment"]
+    wc = float(consistency_weight)
+    cons = pd.to_numeric(df["consistencia"], errors="coerce")
+    base = pd.to_numeric(df["investment"], errors="coerce")
+    blended = (1 - wc) * base + wc * cons
+    df["investment"] = np.where(cons.notna(), blended, base).round(2)
+    df = df.sort_values("investment", ascending=False)
+    df["rank_invest"] = range(1, len(df) + 1)
+
+    # corte fundamentalista (Investment Score) + piso de market cap
     if min_invest is not None:
         fund_ok = df["investment"] >= float(min_invest)
     else:
@@ -182,9 +217,13 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     os.makedirs(outdir, exist_ok=True)
 
-    cols = ["origem", "setor", "investment", "quality", "value", "safety", "dividend",
+    cols = ["origem", "setor", "investment", "investment_base", "consistencia",
+            "quality", "value", "safety", "dividend",
             "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
-            "passa_checklist", "roe_roic_ge_selic", "roe_ge_setor", "roic_ge_setor",
+            "passa_checklist", "mais_5a_bolsa", "sem_prejuizo_anual", "lucro_20t",
+            "div_ge5_5a", "roe_ge_10", "divida_menor_patrim", "cresc_receita_5a",
+            "cresc_lucro_5a", "n_ok", "n_aplic",
+            "roe_roic_ge_selic", "roe_ge_setor", "roic_ge_setor",
             "margem_ge_15", "cagr_ge_setor", "divida_ok", "marketcap_ok", "insider_ok",
             "alavancagem_ok",
             "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roic", "mrg_liq",
@@ -304,6 +343,8 @@ def parse_args():
                         "(default 3.5; 0 desliga)")
     p.add_argument("--min-marketcap", type=float, default=500.0,
                    help="piso de market cap em R$ milhões (default 500)")
+    p.add_argument("--consistency-weight", type=float, default=0.15,
+                   help="peso do bloco de consistência na nota final (0-1, default 0.15)")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -336,4 +377,5 @@ if __name__ == "__main__":
         bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto,
         teto_outlier_mult=a.teto_outlier_mult,
         require_roe_roic_selic=not a.no_roe_roic_selic, max_leverage=a.max_leverage,
-        min_marketcap=a.min_marketcap * 1_000_000)
+        min_marketcap=a.min_marketcap * 1_000_000,
+        consistency_weight=a.consistency_weight)

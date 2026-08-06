@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from datafeed import Fundamentals
+from pricing import sustainable_growth
 
 W = {"quality": 0.45, "value": 0.25, "safety": 0.20, "dividend": 0.10}
 
@@ -48,18 +49,25 @@ def _wmean(vals: dict[str, float], weights: dict[str, float]) -> float:
 def build_dataframe(funds: list[Fundamentals]) -> pd.DataFrame:
     rows = []
     for f in funds:
-        peg = (f.pl / f.cresc_5a) if (pd.notna(f.pl) and pd.notna(f.cresc_5a)
-                                      and f.cresc_5a > 0) else np.nan
+        # crescimento p/ o PEG: sustentável (ROE×(1−payout)); fallback = CAGR de receita
+        dy_for = f.dy_medio if pd.notna(f.dy_medio) else f.dy
+        g_est = sustainable_growth(f.roe, dy_for, f.pl)
+        growth_peg = g_est if (g_est is not None and g_est > 0) else f.cresc_5a
+        peg = (f.pl / growth_peg) if (pd.notna(f.pl) and pd.notna(growth_peg)
+                                      and growth_peg > 0) else np.nan
         fin = f.is_financial()
         rows.append({
             "ticker": f.ticker, "setor": f.setor, "financeira": fin,
-            "pl": f.pl, "pvp": f.pvp, "dy": f.dy, "roe": f.roe, "roic": f.roic,
-            "mrg_liq": f.mrg_liq,
+            "pl": f.pl, "pvp": f.pvp, "dy": f.dy,
+            "dy_div": dy_for,                       # DY usado no score de dividendo (médio)
+            "roe": f.roe, "roic": f.roic, "mrg_liq": f.mrg_liq,
             "ev_ebitda": np.nan if fin else f.ev_ebitda,
             "div_liq_ebitda": np.nan if fin else f.div_liq_ebitda,
             "div_patrim": np.nan if fin else f.div_patrim,
             "liq_corr": np.nan if fin else f.liq_corr,
-            "cresc_5a": f.cresc_5a, "peg": peg,
+            "cresc_5a": f.cresc_5a,
+            "growth_est": g_est if g_est is not None else np.nan,
+            "peg": peg,
         })
     return pd.DataFrame(rows).set_index("ticker")
 
@@ -86,7 +94,7 @@ def score_universe(funds: list[Fundamentals]) -> pd.DataFrame:
         "liq_corr": _rank_score(df["liq_corr"], True),
         "div_patrim": _rank_score(df["div_patrim"], False),
     }
-    nd = _rank_score(df["dy"], True)
+    nd = _rank_score(df["dy_div"], True)
 
     def block_mean(dct: dict[str, pd.Series]) -> pd.Series:
         return pd.concat(dct.values(), axis=1).mean(axis=1, skipna=True)

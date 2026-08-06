@@ -102,11 +102,21 @@ def _fmt_row(r) -> str:
     if pd.notna(taj):
         up_s = f" ({float(up):+.0f}%)" if pd.notna(up) else ""
         teto_cell = f"{float(taj):.2f}{up_s}"
+    cons_cell = "—"
+    try:
+        if pd.notna(r.get("consistencia")):
+            ck = ""
+            if pd.notna(r.get("n_ok")) and pd.notna(r.get("n_aplic")):
+                ck = f" ({int(r.get('n_ok'))}/{int(r.get('n_aplic'))})"
+            cons_cell = f"{int(round(float(r.get('consistencia'))))}{ck}"
+    except Exception:
+        pass
     return (
         f"<tr><td><b>{r.name}</b></td><td>{r.get('origem','')}</td>"
         f"<td>{r.get('setor','')}</td><td>{num(r.get('investment'),0)}</td>"
         f"<td>{num(r.get('quality'),0)}</td><td>{num(r.get('value'),0)}</td>"
         f"<td>{num(r.get('safety'),0)}</td><td>{num(r.get('dividend'),0)}</td>"
+        f"<td>{cons_cell}</td>"
         f"<td>{crit}</td><td>{tag}</td><td>{r.get('trend','')}</td>"
         f"<td>{num(r.get('close'),2)}</td><td>{teto_cell}</td></tr>"
     )
@@ -183,6 +193,7 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict) -> str:
         n_graf = int((og != "Não").sum())
         head = ("<tr><th>Ativo</th><th>Origem</th><th>Setor</th><th>Invest.</th>"
                 "<th>Qual.</th><th>Value</th><th>Safety</th><th>Div.</th>"
+                "<th>Consist.</th>"
                 "<th>Critérios</th><th>Oport. gráfica</th><th>Tendência</th><th>Preço</th>"
                 "<th>Teto (aj.)</th></tr>")
         rows = "".join(_fmt_row(r) for _, r in selecionados.iterrows())

@@ -38,6 +38,7 @@ class Fundamentals:
     liq_corr: float = math.nan      # Liquidez corrente
     cresc_5a: float = math.nan      # Crescimento receita 5a (%) -> proxy p/ PEG
     market_cap: float = math.nan    # Valor de mercado (R$)
+    dy_medio: float = math.nan      # DY médio de N anos (preenchido pelo screener)
     setor: str = ""
 
     def is_financial(self) -> bool:
@@ -294,3 +295,68 @@ def get_insider_sells(ticker: str, meses: int = 12,
         return bool(vol >= min_volume)
     except Exception:
         return None
+
+
+# -------- HISTÓRICO p/ critérios de consistência --------
+def listed_years(px) -> float:
+    """Anos desde o primeiro pregão disponível no histórico (proxy de tempo de Bolsa)."""
+    try:
+        import datetime as _dt
+        first = px.index[0]
+        days = (pd.Timestamp(_dt.date.today()) - pd.Timestamp(first)).days
+        return days / 365.25
+    except Exception:
+        return math.nan
+
+
+def annual_dy_series(px, years: int = 5):
+    """Série de DY anual (proventos do ano / preço médio do ano), últimos `years` anos."""
+    if px is None or "Dividends" not in getattr(px, "columns", []) or "Close" not in px.columns:
+        return None
+    df = px[["Close", "Dividends"]].dropna()
+    if df.empty:
+        return None
+    yr = df.index.year
+    div_y = df["Dividends"].groupby(yr).sum()
+    px_y = df["Close"].groupby(yr).mean()
+    dy_y = (div_y / px_y * 100.0).dropna()
+    return dy_y.tail(years) if len(dy_y) else None
+
+
+def paid_dividends_ge(px, years: int = 5, thr_pct: float = 5.0):
+    """True se pagou DY >= thr_pct em TODOS os últimos `years` anos; None se histórico curto."""
+    s = annual_dy_series(px, years)
+    if s is None or len(s) < years:
+        return None
+    return bool((s >= thr_pct).all())
+
+
+def get_net_income_history(ticker: str):
+    """Best-effort: (lista de lucro líquido ANUAL, lista TRIMESTRAL) do yfinance.
+
+    Cobertura da B3 é irregular -> frequentemente vazio. Retorna ([], []) em falha.
+    Desligue com env PROFIT_HISTORY=0.
+    """
+    import os
+    if os.getenv("PROFIT_HISTORY", "1") == "0":
+        return [], []
+    annual, quarterly = [], []
+    try:
+        import yfinance as yf
+        t = yf.Ticker(to_yahoo(ticker))
+        for attr, dest in (("income_stmt", annual), ("quarterly_income_stmt", quarterly)):
+            try:
+                st = getattr(t, attr)
+                if st is not None and not st.empty:
+                    for key in ("Net Income", "NetIncome",
+                                "Net Income Common Stockholders"):
+                        if key in st.index:
+                            vals = [float(x) for x in st.loc[key].tolist()
+                                    if pd.notna(x)]
+                            dest.extend(vals)          # ordem: mais recente -> antigo
+                            break
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return annual, quarterly

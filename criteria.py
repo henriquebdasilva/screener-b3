@@ -130,3 +130,57 @@ def evaluate(row: pd.Series, smeans: dict, selic_pct: float,
     c.criterios_ok = sum(1 for f in aplicaveis if f)
     c.passa_checklist = bool(aplicaveis) and all(aplicaveis)
     return c
+
+
+# ---------------- Consistência (8 critérios que influenciam a nota) ----------------
+@dataclass
+class Consistency:
+    mais_5a_bolsa: object = None
+    sem_prejuizo_anual: object = None      # nos anos disponíveis (best-effort)
+    lucro_20t: object = None               # 20 trimestres (n/d se dados insuficientes)
+    div_ge5_5a: object = None              # DY >= 5% em todos os últimos 5 anos
+    roe_ge_10: object = None
+    divida_menor_patrim: object = None     # Dív/Patrim < 1 (n/a p/ financeira)
+    cresc_receita_5a: object = None
+    cresc_lucro_5a: object = None          # best-effort
+    n_ok: int = 0
+    n_aplic: int = 0
+    score: float = math.nan                # 0-100 = % dos aplicáveis atendidos
+
+    def as_dict(self):
+        return self.__dict__.copy()
+
+
+def consistency(row, listed_y, div_ge5, ni_annual, ni_quarterly,
+                is_financial: bool = False) -> Consistency:
+    c = Consistency()
+    ly = _num(listed_y)
+    c.mais_5a_bolsa = None if ly is None else bool(ly >= 5)
+    c.div_ge5_5a = div_ge5 if isinstance(div_ge5, bool) else None
+
+    roe = _num(row.get("roe"))
+    c.roe_ge_10 = None if roe is None else bool(roe >= 10.0)
+
+    if is_financial:
+        c.divida_menor_patrim = None       # não se aplica a banco/seguro
+    else:
+        dp = _num(row.get("div_patrim"))
+        c.divida_menor_patrim = None if dp is None else bool(dp < 1.0)
+
+    cr = _num(row.get("cresc_5a"))
+    c.cresc_receita_5a = None if cr is None else bool(cr > 0)
+
+    # lucro (best-effort; yfinance p/ B3 é irregular) — ordem: recente -> antigo
+    if ni_annual and len(ni_annual) >= 2:
+        c.sem_prejuizo_anual = bool(all(x > 0 for x in ni_annual))
+        c.cresc_lucro_5a = bool(ni_annual[0] > ni_annual[-1] > 0)
+    if ni_quarterly and len(ni_quarterly) >= 20:
+        c.lucro_20t = bool(all(x > 0 for x in ni_quarterly[:20]))
+
+    flags = [c.mais_5a_bolsa, c.sem_prejuizo_anual, c.lucro_20t, c.div_ge5_5a,
+             c.roe_ge_10, c.divida_menor_patrim, c.cresc_receita_5a, c.cresc_lucro_5a]
+    ap = [f for f in flags if f is not None]
+    c.n_aplic = len(ap)
+    c.n_ok = sum(1 for f in ap if f)
+    c.score = (100.0 * c.n_ok / c.n_aplic) if ap else math.nan
+    return c
