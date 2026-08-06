@@ -184,7 +184,29 @@ def _teses_block(df: pd.DataFrame) -> str:
         '<b>não é recomendação</b>.</p>' + "".join(itens))
 
 
-_H2 = 'font-size:15px;margin:20px 0 6px'
+_H2 = 'font-size:15px;margin:22px 0 6px;color:#0f172a'
+_H3 = 'font-size:12.5px;margin:14px 0 4px;color:#475569;text-transform:uppercase;letter-spacing:.04em'
+
+_MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+          "agosto", "setembro", "outubro", "novembro", "dezembro"]
+
+
+def _fmt_date(hoje: str) -> str:
+    try:
+        import datetime as _dt
+        d = _dt.datetime.strptime(hoje, "%Y-%m-%d")
+        return f"{d.day:02d} de {_MESES[d.month - 1]} de {d.year}"
+    except Exception:
+        return hoje
+
+
+_TETO_NOTE = (
+    'Cinco métodos — Bazin (yield-alvo = Selic), Gordon (dividendos), DCF (lucros), Graham '
+    'e Lynch/PEGY — mais a Média e a Mediana. <b>Ajust.</b> = mediana com desconto de '
+    'segurança; *Upside calculado sobre o Ajust. Bazin e Gordon usam o DY médio de ~5 anos. '
+    'Método muito fora (além de ~2,5× a mediana) é descartado; em bancos/seguros, Graham e '
+    'Lynch também. Estimativas sensíveis às premissas — referência, não gatilho.'
+)
 
 
 def _ret_str(v):
@@ -244,11 +266,22 @@ def _main_table(df: pd.DataFrame, title: str) -> str:
             f'<table>{_main_head()}{rows}</table>')
 
 
+def _group_block(df: pd.DataFrame, title: str) -> str:
+    if df is None or df.empty:
+        return (f'<h2 style="{_H2}">{title}</h2>'
+                f'<p class="empty">Nenhum papel neste grupo hoje.</p>')
+    parts = [_main_table(df, title)]
+    parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
+    if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
+        parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
+    return "".join(parts)
+
+
 def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                market: dict = None, mood: dict = None) -> str:
     topo = _market_block(market) + _mood_block(mood)
     if selecionados is None or selecionados.empty:
-        body = topo + '<p class="empty">Nenhum papel passou no corte hoje.</p>'
+        body = topo + '<p class="empty">Nenhum papel passou no corte fundamentalista hoje.</p>'
         n_graf = 0
     else:
         og = selecionados["oportunidade_grafica"] if "oportunidade_grafica" \
@@ -261,36 +294,28 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                 lambda o: "BOVA11" if "BOVA11" in o else "SMALL11")
         bova = selecionados[grp == "BOVA11"]
         small = selecionados[grp == "SMALL11"]
-        agenda = ""
-        if "prox_resultado" in selecionados.columns or "ex_dividendo" in selecionados.columns:
-            agenda = (f'<h2 style="{_H2}">Agenda &amp; dividendos</h2>'
-                      + _agenda_table(selecionados))
         body = (
             topo
-            + _main_table(bova, "BOVA11 / Ibovespa (top 30%)")
-            + _main_table(small, "SMALL11 / Small Caps (top 30%)")
-            + f'<h2 style="{_H2}">Preços-teto (R$)</h2>'
-            + '<p class="sub" style="margin:0 0 8px">Cinco métodos — Bazin (yield-alvo '
-              '= Selic), Gordon (dividendos), DCF (lucros), Graham e Lynch/PEGY — mais a '
-              '<b>Média</b> e a <b>Mediana</b>. <b>Ajust.</b> = mediana com desconto de '
-              'segurança; *Upside vs. o Ajust. Bazin e Gordon usam o <b>DY médio de ~5 '
-              'anos</b>. Método muito fora (além de ~2,5× a mediana) é descartado; em '
-              'bancos/seguros, Graham e Lynch também. Estimativas — não são gatilho.</p>'
-            + _teto_table(selecionados)
-            + agenda
+            + _group_block(bova, "BOVA11 · Ibovespa (30% de maior score)")
+            + _group_block(small, "SMALL11 · Small Caps (30% de maior score)")
+            + f'<p class="sub" style="margin:14px 0 0">{_TETO_NOTE}</p>'
             + _teses_block(selecionados)
         )
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{_CSS}</style></head>
 <body><div class="card">
-<h1>Screener B3 — {hoje}</h1>
-<p class="sub">Listas <b>BOVA11</b> e <b>SMALL11</b> separadas, com os <b>30% melhores</b> por
-Investment Score em cada. Corte fundamentalista + oportunidade gráfica (Rompimento/Pivô/Não)
-por papel. {n_graf} com sinal gráfico hoje. Parâmetros: {meta}</p>
+<h1>Relatório Quantitativo · Ações B3</h1>
+<p class="sub" style="margin:0 0 14px">{_fmt_date(hoje)}</p>
+<p style="margin:0 0 6px">Rastreamento sistemático que combina <b>qualidade fundamentalista</b>,
+<b>valuation</b> e <b>sinal técnico</b>. As carteiras <b>BOVA11</b> (large caps) e
+<b>SMALL11</b> (small caps) são avaliadas de forma independente; apresentam-se abaixo os
+papéis de maior <b>Investment Score</b> em cada uma, com a oportunidade gráfica
+(Rompimento/Pivô) sinalizada por ativo. {n_graf} papéis com sinal gráfico na data.</p>
 {body}
-<p class="warn">Material analítico gerado automaticamente. <b>Não é recomendação de
-investimento.</b> Dados de fontes públicas podem conter erros/defasagem; "vs setor" usa a
-média do universo varrido; insiders e índices são best-effort. A planilha completa segue
-anexada.</p>
+<p class="warn">Material analítico gerado automaticamente. <b>Não constitui recomendação de
+investimento.</b> Dados de fontes públicas podem conter erros ou defasagem; "vs. setor" usa
+a média do universo varrido; insiders e índices de mercado são <i>best-effort</i>. A planilha
+completa (Selecionados + Universo) segue anexada.</p>
+<p class="sub" style="margin-top:8px;font-size:11px;color:#94a3b8">Parâmetros: {meta}</p>
 </div></body></html>"""
 
 
