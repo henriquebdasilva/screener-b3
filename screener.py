@@ -34,7 +34,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.5,
-        min_marketcap=500_000_000.0, consistency_weight=0.15):
+        min_marketcap=500_000_000.0, consistency_weight=0.15,
+        max_net_debt_equity=1.5, split_by_origin=True, group_top=0.30):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
@@ -164,9 +165,18 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     df = df.sort_values("investment", ascending=False)
     df["rank_invest"] = range(1, len(df) + 1)
 
-    # corte fundamentalista (Investment Score) + piso de market cap
+    # grupo por origem (para separar as listas e cortar por percentil dentro de cada uma)
+    df["grupo"] = df["origem"].apply(
+        lambda o: "BOVA11" if "BOVA11" in str(o) else "SMALL11")
+
+    # corte fundamentalista (Investment Score)
     if min_invest is not None:
         fund_ok = df["investment"] >= float(min_invest)
+    elif split_by_origin:
+        # mantém os melhores `group_top` (ex.: 30%) DENTRO de cada grupo
+        thr = df.groupby("grupo")["investment"].transform(
+            lambda s: s.quantile(1 - group_top))
+        fund_ok = df["investment"] >= thr
     else:
         thr = df["investment"].quantile(1 - top_quantile)
         fund_ok = df["investment"] >= thr
@@ -182,6 +192,22 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         fund_ok = fund_ok & (~muito_endividada)
     else:
         df["alavancagem_ok"] = True
+
+    # remove por Dív.Líq/Patrim (derivada) > teto, exceto financeiras
+    from criteria import net_debt_to_equity
+    df["div_liq_patrim"] = pd.to_numeric(
+        df.apply(lambda r: net_debt_to_equity(r.get("pvp"), r.get("ev_ebitda"),
+                                              r.get("div_liq_ebitda")), axis=1),
+        errors="coerce").round(2)
+    if max_net_debt_equity and max_net_debt_equity > 0:
+        fin_series = pd.Series({t: fin_map.get(t, False) for t in df.index})
+        nde = df["div_liq_patrim"]
+        endivid_patrim = (~fin_series) & nde.notna() & (nde > max_net_debt_equity)
+        df["nde_ok"] = ~endivid_patrim
+        fund_ok = fund_ok & (~endivid_patrim)
+    else:
+        df["nde_ok"] = True
+
     if strict_criteria:
         fund_ok = fund_ok & (df["passa_checklist"] == True)  # noqa: E712
     df["fund_ok"] = fund_ok
@@ -217,7 +243,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     os.makedirs(outdir, exist_ok=True)
 
-    cols = ["origem", "setor", "investment", "investment_base", "consistencia",
+    cols = ["origem", "grupo", "setor", "investment", "investment_base", "consistencia",
             "quality", "value", "safety", "dividend",
             "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
             "passa_checklist", "mais_5a_bolsa", "sem_prejuizo_anual", "lucro_20t",
@@ -225,7 +251,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "cresc_lucro_5a", "n_ok", "n_aplic",
             "roe_roic_ge_selic", "roe_ge_setor", "roic_ge_setor",
             "margem_ge_15", "cagr_ge_setor", "divida_ok", "marketcap_ok", "insider_ok",
-            "alavancagem_ok",
+            "alavancagem_ok", "div_liq_patrim", "nde_ok",
             "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roic", "mrg_liq",
             "div_liq_ebitda",
             "liq_corr", "div_patrim", "peg", "close", "teto_bazin", "teto_gordon",
@@ -261,8 +287,12 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     if send_email:
         try:
             from mailer import build_html, send_report_email
+            from market import market_summary, market_mood
+            resumo = market_summary(selic)          # Selic + índices (YTD/MTD)
+            humor = market_mood(full)               # % alta/baixa por índice e setor
             html = build_html(selecionados, hoje, dict(universe=universe,
-                              top_quantile=top_quantile, min_invest=min_invest))
+                              top_quantile=top_quantile, min_invest=min_invest),
+                              market=resumo, mood=humor)
             n_graf = int((selecionados["oportunidade_grafica"] != "Não").sum()) \
                 if len(selecionados) else 0
             subject = (f"[Screener B3] {len(selecionados)} papéis nos critérios "
@@ -345,6 +375,13 @@ def parse_args():
                    help="piso de market cap em R$ milhões (default 500)")
     p.add_argument("--consistency-weight", type=float, default=0.15,
                    help="peso do bloco de consistência na nota final (0-1, default 0.15)")
+    p.add_argument("--max-net-debt-equity", type=float, default=1.5,
+                   help="remove não-financeiras com Dív.Líq/Patrim (derivada) acima disso "
+                        "(default 1.5; 0 desliga)")
+    p.add_argument("--group-top", type=float, default=0.30,
+                   help="fração dos melhores por grupo BOVA11/SMALL11 (default 0.30 = 30%%)")
+    p.add_argument("--no-split", action="store_true",
+                   help="não separar por grupo; usa --top-quantile no universo inteiro")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -378,4 +415,6 @@ if __name__ == "__main__":
         teto_outlier_mult=a.teto_outlier_mult,
         require_roe_roic_selic=not a.no_roe_roic_selic, max_leverage=a.max_leverage,
         min_marketcap=a.min_marketcap * 1_000_000,
-        consistency_weight=a.consistency_weight)
+        consistency_weight=a.consistency_weight,
+        max_net_debt_equity=a.max_net_debt_equity,
+        split_by_origin=not a.no_split, group_top=a.group_top)
