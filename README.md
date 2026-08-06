@@ -158,7 +158,25 @@ Além do checklist, há um **filtro absoluto de alavancagem**: não-financeiras 
 
 O **Investment Score** pondera Quality **0,45**, Value 0,25, Safety 0,20 e Dividend 0,10
 (mais peso em qualidade, menos em preço/dividendo — reduz o viés a small caps "baratas").
-Os pesos ficam no dict `W` de `scoring.py`.
+Os pesos ficam no dict `W` de `scoring.py`. O **score de Dividend usa o DY médio de ~5 anos**
+(não o DY de 12 meses), e o **PEG usa o crescimento sustentável** (abaixo), com fallback ao
+CAGR de receita.
+
+**Crescimento sustentável (para PEG e valuation).** Em vez do CAGR de lucro cru (que quebra
+com prejuízo — raiz de número negativo, sinal invertido), o app estima o crescimento por
+`g = ROE × (1 − payout)`, com `payout = DY%/100 × P/L`. Usa níveis (sem razão entre lucros),
+é limitado por um teto e, quando não é confiável (ROE ≤ 0, payout fora de [0,1]), **cai no
+CAGR de receita**. Alimenta Gordon/DCF/Lynch e o PEG.
+
+**Bloco de Consistência (influencia a nota).** Oito critérios de qualidade histórica são
+avaliados e a fração atendida (0–100) é **misturada ao Investment Score** (peso
+`--consistency-weight`, default 0,15; coluna `consistencia` e `Consist.` no e-mail):
++5 anos de Bolsa, nunca deu prejuízo (anos disponíveis), lucro nos últimos 20 trimestres,
+dividendo ≥ 5%/ano nos últimos 5 anos, ROE > 10%, dívida < patrimônio (n/a p/ financeira),
+crescimento de receita 5a e crescimento de lucro 5a. Cada critério vira `n/d` quando falta
+dado e **não pesa**. Ressalva honesta: os três ligados a **histórico de lucro** (nunca deu
+prejuízo, 20 trimestres, crescimento de lucro) dependem do yfinance, cuja cobertura para a
+B3 é irregular — costumam sair `n/d`. Desligue essa coleta com env `PROFIT_HISTORY=0`.
 
 `criterios_ok / criterios_aplicaveis` conta quantos foram cumpridos. Por padrão o checklist
 é **informativo** (não elimina, além do piso de market cap). Para exigir **todos** os
