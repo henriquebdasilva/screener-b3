@@ -88,9 +88,19 @@ do rompimento, rode com `--no-volume --no-trend --breakout-consol-pct 15 --break
 
 ## E-mail (relatório + planilha anexa)
 
-Ao final, o app monta um **relatório HTML** com a tabela dos ativos que passaram nos dois
-critérios fundamentalistas, com a **oportunidade gráfica sinalizada por papel** (flag Rompimento/Pivô/Não), e **anexa a planilha `.xlsx`** (aba *Selecionados* + aba *Universo* com o ranking completo) e o CSV dos selecionados. O envio só ocorre se as credenciais estiverem
-configuradas — senão, ele é pulado e os relatórios continuam sendo gerados em `reports/`.
+O topo do e-mail traz um **Resumo de mercado** (Selic, e Ibovespa / Small Caps / IFIX no ano
+e no mês via yfinance — IFIX é best-effort) e um **Humor do mercado** (percentual dos papéis
+em alta/lateral/baixa pela MM21, por índice BOVA11/SMALL11 e por setor, usando todo o
+universo). Duas coisas **não** têm fonte automática confiável na B3 e aparecem como `n/d`:
+**fluxo estrangeiro** e **opções mais negociadas** (páginas gated / não expostas por
+yfinance).
+
+Em seguida, as listas de **BOVA11** e **SMALL11** aparecem **separadas**, cada uma com os
+**30% melhores** por Investment Score dentro do próprio grupo (flags `--group-top`, default
+0,30, e `--no-split` para voltar ao corte único por `--top-quantile`). Depois vêm os
+preços-teto, a agenda e as teses. O app **anexa a planilha `.xlsx`** (aba *Selecionados* +
+aba *Universo*) e o CSV. O envio só ocorre se as credenciais estiverem configuradas — senão,
+é pulado e os relatórios continuam em `reports/`.
 
 Configuração por **variáveis de ambiente / GitHub Secrets** (nunca em código):
 
@@ -154,7 +164,11 @@ valores Sim/Não/n/d):
 
 Além do checklist, há um **filtro absoluto de alavancagem**: não-financeiras com
 **Dív.Líq/EBITDA acima de 3,5** saem da seleção (coluna `alavancagem_ok`; flag
-`--max-leverage`, 0 desliga; financeiras não são afetadas).
+`--max-leverage`, 0 desliga; financeiras não são afetadas). Há também um corte por
+**Dív.Líq/Patrimônio acima de 1,5** (coluna `div_liq_patrim`/`nde_ok`; flag
+`--max-net-debt-equity`, 0 desliga). Como o fundamentus não dá esse índice pronto, ele é
+**derivado** dos índices disponíveis — `(Dív.Líq/EBITDA × P/VP) / (EV/EBITDA − Dív.Líq/EBITDA)`
+— e vira `n/d` (não corta) quando o EBITDA implícito é ~0/negativo; financeiras são poupadas.
 
 O **Investment Score** pondera Quality **0,45**, Value 0,25, Safety 0,20 e Dividend 0,10
 (mais peso em qualidade, menos em preço/dividendo — reduz o viés a small caps "baratas").
