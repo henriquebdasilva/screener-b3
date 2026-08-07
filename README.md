@@ -162,13 +162,31 @@ valores Sim/Não/n/d):
    insiders do Fundamentus; frágil, então em dúvida vira `n/d` e não pesa. Desligue com env
    `INSIDER_CHECK=0`.
 
+**Seleção em cascata.** Os cortes duros são aplicados **primeiro** e o percentil por grupo
+é calculado **apenas entre os sobreviventes** (não sobre o universo inteiro). Cortes duros
+(todos exceto financeiras, configuráveis, `0` desliga): market cap ≥ piso (`--min-marketcap`),
+**Dív.Líq/EBITDA ≤ 3,0** (`--max-leverage` — alavancagem) e **Dív.Líq/Patrim ≤ 1,5**
+(`--max-net-debt-equity`, derivada). Depois, dentro de cada grupo (BOVA11/SMALL11), mantêm-se os melhores por
+Investment Score conforme `--top-quantile`.
+
 Além do checklist, há um **filtro absoluto de alavancagem**: não-financeiras com
-**Dív.Líq/EBITDA acima de 3,5** saem da seleção (coluna `alavancagem_ok`; flag
+**Dív.Líq/EBITDA acima de 3,0** saem da seleção (coluna `alavancagem_ok`; flag
 `--max-leverage`, 0 desliga; financeiras não são afetadas). Há também um corte por
 **Dív.Líq/Patrimônio acima de 1,5** (coluna `div_liq_patrim`/`nde_ok`; flag
 `--max-net-debt-equity`, 0 desliga). Como o fundamentus não dá esse índice pronto, ele é
 **derivado** dos índices disponíveis — `(Dív.Líq/EBITDA × P/VP) / (EV/EBITDA − Dív.Líq/EBITDA)`
 — e vira `n/d` (não corta) quando o EBITDA implícito é ~0/negativo; financeiras são poupadas.
+
+**Safety das financeiras via Basileia (IF.data/BC).** Bancos e seguradoras não têm os
+indicadores de balanço usados no Safety (Dív.Líq/EBITDA, liquidez, Dív/Patrim), então ficam
+`n/d`. Para preencher, o app busca o **Índice de Basileia** na **API Olinda do IF.data** do
+Banco Central (JSON, pública) e o converte em Safety, ancorado no piso regulatório: **11% →
+0** e **18% → 100** (linear, saturando). Só cobre os bancos do mapa em `basileia.py`
+(ticker→CNPJ/nome — confira os CNPJs); casa por CNPJ ou nome. Coluna `basileia` na planilha.
+Em qualquer falha (API fora, banco fora do mapa), o Safety segue `n/d` — nada quebra. Flags:
+`--no-basileia` desliga; envs `BASILEIA=0`, `BASILEIA_DEBUG=1` (mostra os campos retornados),
+`BASILEIA_RELATORIOS`/`BASILEIA_TIPOS` (ajuste fino da consulta). **v1 — validar no primeiro
+run:** a parametrização exata do Olinda pode precisar de ajuste via `BASILEIA_DEBUG=1`.
 
 O **Investment Score** pondera Quality **0,45**, Value 0,25, Safety 0,20 e Dividend 0,10
 (mais peso em qualidade, menos em preço/dividendo — reduz o viés a small caps "baratas").
