@@ -57,6 +57,7 @@ jobs:
           AI_DEBUG: ${{ secrets.AI_DEBUG }}
           SELIC: ${{ secrets.SELIC }}
           INSIDER_CHECK: ${{ secrets.INSIDER_CHECK }}
+          BASILEIA_DEBUG: ${{ secrets.BASILEIA_DEBUG }}
         run: |
           python screener.py --universe "$UNIVERSE" --top-quantile "$TOPQ" --no-volume --no-trend --breakout-consol-pct 12 --breakout-margin-pct 0 --min-marketcap 700 
 
