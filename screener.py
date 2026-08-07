@@ -33,9 +33,10 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
-        teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.5,
+        teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
-        max_net_debt_equity=1.5, split_by_origin=True, group_top=None):
+        max_net_debt_equity=1.5, split_by_origin=True, group_top=None,
+        use_basileia=True):
 
     tickers = get_universe(universe)
     items = list(tickers.items())
@@ -147,6 +148,23 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                          "dy_teto": round(dy_ceil, 2) if pd.notna(dy_ceil) else None}
     df = df.join(pd.DataFrame(chk_rows).T).join(pd.DataFrame(ceil_rows).T)
 
+    # ---- Safety das financeiras via Índice de Basileia (IF.data / BC) ----
+    df["basileia"] = float("nan")
+    if use_basileia:
+        try:
+            from basileia import fetch_basileia_map, basileia_safety
+            fins = [t for t in df.index if fin_map.get(t, False)]
+            bmap = fetch_basileia_map(fins)
+            for tk, pct in (bmap or {}).items():
+                if tk in df.index:
+                    df.loc[tk, "basileia"] = pct
+                    df.loc[tk, "safety"] = basileia_safety(pct)
+            if bmap:
+                from scoring import investment_series
+                df["investment"] = investment_series(df).round(2)
+        except Exception as e:
+            print(f"[basileia] ignorado ({e}).")
+
     # ---- Consistência (8 critérios) e mescla na nota ----
     from criteria import consistency as _consistency
     cons_rows = {}
@@ -169,48 +187,57 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     df["grupo"] = df["origem"].apply(
         lambda o: "BOVA11" if "BOVA11" in str(o) else "SMALL11")
 
-    # corte fundamentalista (Investment Score)
-    frac = group_top if (group_top is not None) else top_quantile   # fração por grupo
-    if min_invest is not None:
-        fund_ok = df["investment"] >= float(min_invest)
-    elif split_by_origin:
-        # mantém os melhores `frac` (ex.: 0.5 = 50%) DENTRO de cada grupo
-        thr = df.groupby("grupo")["investment"].transform(
-            lambda s: s.quantile(1 - frac))
-        fund_ok = df["investment"] >= thr
-    else:
-        thr = df["investment"].quantile(1 - top_quantile)
-        fund_ok = df["investment"] >= thr
-    fund_ok = fund_ok.fillna(False)
+    # ---- Seleção em CASCATA ----
+    # 1) cortes duros primeiro (qualidade/solidez); 2) percentil por grupo nos SOBREVIVENTES.
+    fin_series = pd.Series({t: fin_map.get(t, False) for t in df.index})
+    hard = pd.Series(True, index=df.index)
+
     if mktcap_filter:
-        fund_ok = fund_ok & (df["marketcap_ok"] != False)   # noqa: E712 (mantém n/d)
-    # remove empresas muito endividadas (Dív.Líq/EBITDA > teto), exceto financeiras
+        hard &= (df["marketcap_ok"] != False)                  # noqa: E712 (mantém n/d)
+
+    # Dív.Líq/EBITDA <= teto (alavancagem), exceto financeiras
     if max_leverage and max_leverage > 0:
-        fin_series = pd.Series({t: fin_map.get(t, False) for t in df.index})
         lev = df["div_liq_ebitda"]
         muito_endividada = (~fin_series) & lev.notna() & (lev > max_leverage)
         df["alavancagem_ok"] = ~muito_endividada
-        fund_ok = fund_ok & (~muito_endividada)
+        hard &= ~muito_endividada
     else:
         df["alavancagem_ok"] = True
 
-    # remove por Dív.Líq/Patrim (derivada) > teto, exceto financeiras
+    # Dív.Líq/Patrim (derivada) <= teto, exceto financeiras
     from criteria import net_debt_to_equity
     df["div_liq_patrim"] = pd.to_numeric(
         df.apply(lambda r: net_debt_to_equity(r.get("pvp"), r.get("ev_ebitda"),
                                               r.get("div_liq_ebitda")), axis=1),
         errors="coerce").round(2)
     if max_net_debt_equity and max_net_debt_equity > 0:
-        fin_series = pd.Series({t: fin_map.get(t, False) for t in df.index})
         nde = df["div_liq_patrim"]
         endivid_patrim = (~fin_series) & nde.notna() & (nde > max_net_debt_equity)
         df["nde_ok"] = ~endivid_patrim
-        fund_ok = fund_ok & (~endivid_patrim)
+        hard &= ~endivid_patrim
     else:
         df["nde_ok"] = True
 
     if strict_criteria:
-        fund_ok = fund_ok & (df["passa_checklist"] == True)  # noqa: E712
+        hard &= (df["passa_checklist"] == True)                # noqa: E712
+    hard = hard.fillna(False)
+
+    # 2) percentil por grupo, calculado SÓ entre os sobreviventes dos cortes duros
+    frac = group_top if (group_top is not None) else top_quantile
+    surv = df[hard]
+    if min_invest is not None:
+        fund_ok = hard & (df["investment"] >= float(min_invest))
+    elif split_by_origin:
+        thr = surv.groupby("grupo")["investment"].transform(
+            lambda s: s.quantile(1 - frac))
+        thr_full = pd.Series(index=df.index, dtype=float)
+        thr_full.loc[surv.index] = thr
+        fund_ok = hard & df["investment"].ge(thr_full)
+    else:
+        thr = surv["investment"].quantile(1 - top_quantile) if len(surv) else float("inf")
+        fund_ok = hard & (df["investment"] >= thr)
+    fund_ok = fund_ok.fillna(False)
+
     df["fund_ok"] = fund_ok
     df["breakout"] = df["signal"].fillna(False).astype(bool)
     df["aprovado"] = df["fund_ok"] & df["breakout"]
@@ -244,7 +271,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     os.makedirs(outdir, exist_ok=True)
 
-    cols = ["origem", "grupo", "setor", "investment", "investment_base", "consistencia",
+    cols = [
+            "origem", "grupo", "setor", "investment", "investment_base", "consistencia",
+            "basileia",
             "quality", "value", "safety", "dividend",
             "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
             "passa_checklist", "mais_5a_bolsa", "sem_prejuizo_anual", "lucro_20t",
@@ -371,9 +400,9 @@ def parse_args():
                         "(default 2.5; 0 desliga)")
     p.add_argument("--no-roe-roic-selic", action="store_true",
                    help="desativa o critério 'ROE ou ROIC >= Selic' (ativo por padrão)")
-    p.add_argument("--max-leverage", type=float, default=3.5,
+    p.add_argument("--max-leverage", type=float, default=3.0,
                    help="remove não-financeiras com Dív.Líq/EBITDA acima disso "
-                        "(default 3.5; 0 desliga)")
+                        "(default 3.0; 0 desliga)")
     p.add_argument("--min-marketcap", type=float, default=500.0,
                    help="piso de market cap em R$ milhões (default 500)")
     p.add_argument("--consistency-weight", type=float, default=0.15,
@@ -386,6 +415,8 @@ def parse_args():
                         "(default: usa --top-quantile)")
     p.add_argument("--no-split", action="store_true",
                    help="não separar por grupo; usa --top-quantile no universo inteiro")
+    p.add_argument("--no-basileia", action="store_true",
+                   help="não buscar Índice de Basileia (IF.data) p/ o Safety das financeiras")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -421,4 +452,5 @@ if __name__ == "__main__":
         min_marketcap=a.min_marketcap * 1_000_000,
         consistency_weight=a.consistency_weight,
         max_net_debt_equity=a.max_net_debt_equity,
-        split_by_origin=not a.no_split, group_top=a.group_top)
+        split_by_origin=not a.no_split, group_top=a.group_top,
+        use_basileia=not a.no_basileia)

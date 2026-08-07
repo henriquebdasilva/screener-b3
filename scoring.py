@@ -111,3 +111,13 @@ def score_universe(funds: list[Fundamentals]) -> pd.DataFrame:
     df = df.sort_values("investment", ascending=False)
     df["rank_invest"] = range(1, len(df) + 1)
     return df
+
+
+def investment_series(df: pd.DataFrame) -> pd.Series:
+    """Recalcula o Investment a partir das colunas de bloco (quality/value/safety/dividend),
+    re-normalizando os pesos sobre os blocos disponíveis. Útil depois de preencher o Safety
+    das financeiras (Basileia)."""
+    def _wm(row):
+        vals = {k: row.get(k) for k in W}
+        return _wmean(vals, W)
+    return df.apply(_wm, axis=1)
