@@ -1,4 +1,4 @@
-# Screener B3 — 2026-08-06
+# Screener B3 — 2026-08-07
 
 *Parâmetros:* `{'universe': 'both', 'top_quantile': 0.5, 'min_invest': None, 'lookback': 20, 'vol_mult': 1.5, 'require_contraction': False}`
 
@@ -28,12 +28,12 @@
 | LREN3    | BOVA11+SMALL11 | Consumer Cyclical      |        68.04 |     69.55 |   59.86 |    71.92 |      46.98 | Não             | Em Baixa |   13.48 |      -4.39717  |
 | PETR3    | BOVA11         | Energy                 |        67.04 |     83.19 |   65.98 |    31.26 |      98.66 | Não             | Em Alta  |   47.31 |      -2.85421  |
 | VIVA3    | BOVA11+SMALL11 | Consumer Cyclical      |        66.64 |     77.19 |   49.08 |    89.75 |      16.78 | Não             | Em Baixa |   21.81 |      -7.27041  |
-| EZTC3    | SMALL11        | Real Estate            |        65.76 |     54.05 |   58.42 |    93.13 |      51.01 | Não             | Em Baixa |   11.02 |     -10.1142   |
+| EZTC3    | SMALL11        | Real Estate            |        65.81 |     54.05 |   58.42 |    93.13 |      51.68 | Não             | Em Baixa |   11.02 |     -10.1142   |
 | MULT3    | BOVA11+SMALL11 | Real Estate            |        65.72 |     87.76 |   35.98 |    51.84 |      37.58 | Não             | Em Baixa |   27.88 |      -6.25421  |
 | GRND3    | SMALL11        | Consumer Cyclical      |        65.56 |     65.63 |   39.44 |    81.52 |      96.64 | Não             | Em Baixa |    3.54 |      -8.52713  |
-| PSSA3    | BOVA11         | Financial Services     |        65.4  |     77.11 |   41.3  |   nan    |      52.35 | Não             | Em Alta  |   52.65 |      -5.04959  |
 | CYRE3    | BOVA11+SMALL11 | Consumer Cyclical      |        65.2  |     61.52 |   59.16 |    79.46 |      65.77 | Não             | Em Baixa |   21.83 |      -2.97778  |
 | DIRR3    | BOVA11+SMALL11 | Real Estate            |        65.18 |     74.12 |   39.15 |    64.92 |      87.92 | Não             | Em Baixa |   11.75 |      -7.26125  |
+| PSSA3    | BOVA11         | Financial Services     |        65.12 |     77.11 |   41.3  |   nan    |      49.66 | Não             | Em Alta  |   52.65 |      -5.04959  |
 | ISAE4    | BOVA11         | Utilities              |        64.68 |     62.11 |   51.84 |    80.21 |      73.83 | Não             | Em Baixa |   26.65 |      -6.58956  |
 | KEPL3    | SMALL11        | Industrials            |        63.63 |     67.5  |   46.98 |    72.95 |      93.29 | Não             | Em Baixa |    6.1  |      -6.00924  |
 | ITSA4    | BOVA11         | Industrials            |        63.42 |     61.8  |   27.4  |    87.64 |      77.18 | Não             | Em Alta  |   13.51 |      -3.01508  |
@@ -50,7 +50,7 @@
 | SANB11   | BOVA11         | Financial Services     |        60.16 |     54.02 |   57.51 |   nan    |      66.44 | Não             | Lateral  |   29.27 |      -0.712344 |
 | TOTS3    | BOVA11+SMALL11 | Technology             |        60.13 |     83.54 |   31.53 |    45.74 |      14.09 | Não             | Em Alta  |   32.21 |      -0.922791 |
 | CMIG4    | BOVA11         | Utilities              |        60.02 |     57.1  |   51.34 |    39.23 |      95.3  | Não             | Em Alta  |   11.11 |      -1.50709  |
-| ABEV3    | BOVA11         | Consumer Defensive     |        59.84 |     78.76 |   18.2  |    53.71 |      49.66 | Não             | Em Baixa |   15.66 |      -2.91382  |
+| ABEV3    | BOVA11         | Consumer Defensive     |        59.9  |     78.76 |   18.2  |    53.71 |      50.34 | Não             | Em Baixa |   15.66 |      -2.91382  |
 | GMAT3    | SMALL11        | Consumer Cyclical      |        59.46 |     53.69 |   74.5  |    60.56 |      32.89 | Não             | Em Alta  |    3.82 |      -4.0201   |
 | TEND3    | SMALL11        | Real Estate            |        59.46 |     77.62 |   52.18 |    60.38 |      40.27 | Não             | Em Baixa |   33.1  |      -1.04634  |
 | AZZA3    | BOVA11+SMALL11 | Consumer Cyclical      |        59.35 |     41.19 |   82.58 |    76.26 |      36.24 | Não             | Em Baixa |   16.19 |     -13.2369   |
