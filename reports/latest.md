@@ -58,7 +58,7 @@
 | AZZA3    | BOVA11+SMALL11 | Consumer Cyclical      |        59    |     40.74 |   81.74 |    76.26 |      36.24 | Não             | Em Baixa |   15.96 |    -14.4695    |
 | HYPE3    | BOVA11+SMALL11 | Healthcare             |        58.45 |     61.46 |   47.18 |    67.26 |      40.94 | Não             | Em Alta  |   21.46 |     -0.877601  |
 | TAEE11   | BOVA11+SMALL11 | Utilities              |        57.81 |     74.68 |   27.36 |    51.41 |      84.56 | Não             | Em Baixa |   40.06 |     -3.67877   |
-| BBDC3    | BOVA11         | Financial Services     |        57.3  |     51.79 |   59.9  |   nan    |      71.81 | Não             | Em Alta  |   15.75 |     -4.55909   |
+| BBDC3    | BOVA11         | Financial Services     |        57.3  |     51.79 |   59.9  |   nan    |      71.81 | Não             | Em Alta  |   15.75 |     -4.55927   |
 | WEGE3    | BOVA11         | Industrials            |        57.28 |     86.44 |    8.51 |    62.94 |      20.13 | Não             | Lateral  |   48.8  |     -0.752489  |
 | BMOB3    | SMALL11        | Communication Services |        57.13 |     56.11 |   27.15 |    75.15 |      54.36 | Pivô de alta    | Lateral  |   23.94 |     -0.374532  |
 | SBSP3    | BOVA11         | Utilities              |        56.72 |     77.72 |   35    |    44.11 |      24.16 | Não             | Em Baixa |   27.71 |     -7.57172   |
