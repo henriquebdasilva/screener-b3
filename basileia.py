@@ -88,7 +88,9 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
     """
     if os.getenv("BASILEIA", "1") == "0":
         return {}
-    debug = (os.getenv("BASILEIA_DEBUG", "0") == "1") if debug is None else debug
+    if debug is None:
+        _dbg = os.getenv("BASILEIA_DEBUG", "0").strip().lower()
+        debug = _dbg not in ("", "0", "false", "no")   # qualquer outro valor liga
     alvos = [t for t in tickers if t in BANKS]
     if not alvos:
         return {}
@@ -98,6 +100,29 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
         return {}
 
     _err_shown = [0]
+
+    # --- sondagem de metadados (só no debug): descobre relatórios válidos e formato ---
+    if debug:
+        try:
+            rr = requests.get(f"{BASE}/ListaDeRelatorio?$format=json&$top=80", timeout=40)
+            if rr.status_code == 200:
+                for it in rr.json().get("value", []):
+                    num = it.get("NumeroRelatorio") or it.get("Numero") or it.get("Codigo")
+                    nome = it.get("NomeRelatorio") or it.get("Nome") or it.get("Descricao")
+                    print(f"   [basileia][rel] {num} = {nome}")
+            else:
+                print(f"   [basileia] ListaDeRelatorio HTTP {rr.status_code}: {rr.text[:200]}")
+        except Exception as e:
+            print(f"   [basileia] ListaDeRelatorio erro: {e}")
+        for am in _candidate_anomes()[:2]:
+            try:
+                rc = requests.get(
+                    f"{BASE}/IfDataCadastro(AnoMes=@AnoMes)?@AnoMes={am}&$format=json&$top=1",
+                    timeout=40)
+                txt = rc.text[:220]
+                print(f"   [basileia] Cadastro {am}: HTTP {rc.status_code} {txt}")
+            except Exception as e:
+                print(f"   [basileia] Cadastro {am} erro: {e}")
 
     def _get(url):
         try:
