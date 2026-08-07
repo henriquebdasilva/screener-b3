@@ -97,38 +97,46 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
     except Exception:
         return {}
 
-    def _get(url, params):
+    _err_shown = [0]
+
+    def _get(url):
         try:
-            r = requests.get(url, params=params, timeout=40)
+            r = requests.get(url, timeout=40)
             if r.status_code != 200:
-                if debug:
-                    print(f"   [basileia] HTTP {r.status_code} em {url}")
+                if debug and _err_shown[0] < 4:      # mostra o corpo do erro do BC
+                    _err_shown[0] += 1
+                    print(f"   [basileia] HTTP {r.status_code}: {r.text[:280]}")
                 return None
             return r.json().get("value", [])
         except Exception as e:
             if debug:
-                print(f"   [basileia] erro {url}: {e}")
+                print(f"   [basileia] erro: {e}")
             return None
 
+    def _url(anomes, tipo, rel, quote_rel):
+        # @ LITERAL (o requests codificaria como %40 e o Olinda rejeita)
+        r = f"'{rel}'" if quote_rel else str(rel)
+        return (f"{BASE}/IfDataValores(AnoMes=@AnoMes,TipoInstituicao=@TipoInstituicao,"
+                f"Relatorio=@Relatorio)?@AnoMes={anomes}&@TipoInstituicao={tipo}"
+                f"&@Relatorio={r}&$format=json")
+
     # relatórios candidatos que costumam conter Basileia (Resumo / Informações de Capital)
-    relatorios = [int(x) for x in os.getenv("BASILEIA_RELATORIOS", "1,11,2").split(",")]
-    tipos = [int(x) for x in os.getenv("BASILEIA_TIPOS", "2,1").split(",")]
+    relatorios = os.getenv("BASILEIA_RELATORIOS", "1,11,2").split(",")
+    tipos = os.getenv("BASILEIA_TIPOS", "2,1,3,4").split(",")
 
     for anomes in _candidate_anomes():
         registros = []
         for tipo in tipos:
             for rel in relatorios:
-                vals = _get(
-                    f"{BASE}/IfDataValores(AnoMes=@AnoMes,TipoInstituicao=@TipoInstituicao,"
-                    f"Relatorio=@Relatorio)",
-                    {"@AnoMes": anomes, "@TipoInstituicao": tipo, "@Relatorio": rel,
-                     "$format": "json"},
-                )
-                if vals:
-                    if debug and registros == []:
-                        print(f"   [basileia] {anomes} tipo={tipo} rel={rel}: "
-                              f"{len(vals)} regs | chaves ex.: {list(vals[0].keys())[:12]}")
-                    registros.extend(vals)
+                for quote_rel in (False, True):      # tenta Relatorio sem e com aspas
+                    vals = _get(_url(anomes, tipo.strip(), rel.strip(), quote_rel))
+                    if vals:
+                        if debug and registros == []:
+                            print(f"   [basileia] OK {anomes} tipo={tipo} rel={rel} "
+                                  f"quote={quote_rel}: {len(vals)} regs | chaves: "
+                                  f"{list(vals[0].keys())[:14]}")
+                        registros.extend(vals)
+                        break                        # achou o formato -> não repete
         if not registros:
             continue
 
