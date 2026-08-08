@@ -137,10 +137,10 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
         return _get(url) or []
 
     tipo = int(os.getenv("BASILEIA_TIPO", "2"))
-    # a Basileia fica no relatório de "Informações/Índices de Capital".
+    # Relatório 5 = "Informações de Capital" (contém o Índice de Basileia). Confirmado
+    # via catálogo ListaDeRelatorio. Fixável/ajustável por env BASILEIA_RELATORIO.
     env_rel = os.getenv("BASILEIA_RELATORIO", "").strip()
-    relatorios = ([env_rel] if env_rel else
-                  [str(i) for i in range(1, 21)])   # varre 1..20
+    relatorios = [env_rel] if env_rel else ["5"]
 
     # catálogo de relatórios (debug) — número + nome de cada relatório disponível
     if debug:
@@ -187,23 +187,32 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
         if not registros:
             continue
 
-        # 1) Índice de Basileia por CodInst: linha cujo NomeColuna/Descrição contém "basileia"
-        basileia_por_inst = {}
+        # 1) Índice de Basileia por CodInst. "Informações de Capital" pode ter vários
+        #    campos com "Basileia" (ex.: Ampliado); preferimos o principal.
+        cand = {}   # cod -> {nome_norm: valor}
         col_ex = set()
         for rec in registros:
-            nome_col = str(rec.get("NomeColuna") or "").lower()
-            desc_col = str(rec.get("DescricaoColuna") or "").lower()
-            if "basileia" in nome_col or "basileia" in desc_col:
+            nome_col = str(rec.get("NomeColuna") or "")
+            desc_col = str(rec.get("DescricaoColuna") or "")
+            alvo = f"{nome_col} {desc_col}".lower()
+            if "basileia" in alvo:
                 cod = rec.get("CodInst")
-                val = rec.get("Saldo")
                 try:
-                    fv = float(str(val).replace(",", "."))
-                    if cod and not math.isnan(fv):
-                        basileia_por_inst[cod] = fv
+                    fv = float(str(rec.get("Saldo")).replace(",", "."))
                 except Exception:
-                    pass
+                    continue
+                if cod and not math.isnan(fv):
+                    cand.setdefault(cod, {})[_norm(nome_col)] = fv
             elif debug and len(col_ex) < 40:
-                col_ex.add(rec.get("NomeColuna"))
+                col_ex.add(nome_col)
+
+        def _pick(d):
+            # prefere "Índice de Basileia" puro; evita Ampliado/Nível/Principal
+            exato = [v for k, v in d.items() if "basileia" in k
+                     and not any(x in k for x in ("AMPL", "NIVEL", "PRINCIPAL", "IMOBIL"))]
+            return exato[0] if exato else next(iter(d.values()))
+
+        basileia_por_inst = {cod: _pick(d) for cod, d in cand.items() if d}
 
         if not basileia_por_inst:
             if debug:
