@@ -55,6 +55,7 @@
 | SANB11   | BOVA11         | Financial Services     |        59.61 |     53.79 |   55.84 |   nan    |      66.44 | Não             | Lateral  |   29.27 |      -0.712344 |
 | GMAT3    | SMALL11        | Consumer Cyclical      |        59.45 |     53.46 |   74.94 |    60.48 |      32.89 | Não             | Lateral  |    3.73 |      -7.44417  |
 | TEND3    | SMALL11        | Real Estate            |        59.39 |     78.06 |   51.47 |    59.86 |      40.27 | Rompimento      | Em Baixa |   33.63 |       0.538117 |
+| CPFE3    | BOVA11         | Utilities              |        59.28 |     75.51 |   32.69 |    22.81 |      83.22 | Não             | Lateral  |   44.8  |      -4.41647  |
 | IGTI11   | BOVA11+SMALL11 | Real Estate            |        58.83 |     72.82 |   34.82 |    69.1  |      21.48 | Não             | Em Baixa |   24.33 |      -4.84943  |
 | AZZA3    | BOVA11+SMALL11 | Consumer Cyclical      |        58.81 |     40.97 |   80.51 |    76.19 |      36.24 | Não             | Em Baixa |   17.01 |      -8.49919  |
 | BBDC4    | BOVA11         | Financial Services     |        58.07 |     51.13 |   53.24 |   nan    |      70.47 | Não             | Em Baixa |   17.31 |      -8.65723  |
@@ -62,7 +63,6 @@
 | TAEE11   | BOVA11+SMALL11 | Utilities              |        57.59 |     74.68 |   27.16 |    50.39 |      84.56 | Não             | Em Baixa |   39.25 |      -5.62635  |
 | BMOB3    | SMALL11        | Communication Services |        57.34 |     56.56 |   27.79 |    74.59 |      54.36 | Não             | Lateral  |   22.85 |      -4.91053  |
 | WEGE3    | BOVA11         | Industrials            |        57.24 |     86.21 |    8.46 |    63.27 |      20.13 | Não             | Em Alta  |   48.12 |      -2.13545  |
-| CPFE3    | BOVA11         | Utilities              |        56.78 |     75.51 |   32.69 |    22.81 |      83.22 | Não             | Lateral  |   44.8  |      -4.41647  |
 | CMIN3    | BOVA11         | Basic Materials        |        56.64 |     82.65 |   31.62 |    31.28 |      93.96 | Não             | Em Alta  |    5.45 |      -8.86288  |
 | SBSP3    | BOVA11         | Utilities              |        56.5  |     77.5  |   34.6  |    43.52 |      24.83 | Não             | Em Baixa |   26.89 |      -8.19393  |
 | LOGG3    | SMALL11        | Real Estate            |        56.42 |     53.26 |   45.63 |    36.54 |      89.93 | Não             | Em Baixa |   25.25 |      -4.28355  |
