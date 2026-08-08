@@ -73,24 +73,25 @@ def _dedup(seq):
     return out
 
 
-def _parse_ishares_csv(text: str) -> list[str] | None:
-    """Extrai tickers de ação (Asset Class = Renda Variável) do CSV da iShares."""
+def _parse_ishares_csv(text: str):
+    """Extrai (tickers, {ticker: setor}) de ação (Asset Class = Renda Variável) do CSV."""
     text = text.lstrip("\ufeff")
     lines = text.splitlines()
     start = next((i for i, l in enumerate(lines)
                   if l.strip().lower().startswith("ticker,")), None)
     if start is None:
-        return None
+        return None, {}
     reader = csv.reader(io.StringIO("\n".join(lines[start:])))
     header = next(reader, None)
     if not header:
-        return None
+        return None, {}
     cols = {h.strip().lower(): idx for idx, h in enumerate(header)}
     i_tk = cols.get("ticker")
     i_ac = cols.get("asset class")
+    i_se = cols.get("setor") if "setor" in cols else cols.get("sector")
     if i_tk is None:
-        return None
-    out = []
+        return None, {}
+    out, setores = [], {}
     for row in reader:
         if not row or len(row) <= i_tk:
             continue
@@ -100,13 +101,17 @@ def _parse_ishares_csv(text: str) -> list[str] | None:
             continue
         if _TICKER_RE.match(tk):
             out.append(tk)
+            if i_se is not None and len(row) > i_se:
+                se = row[i_se].strip().strip('"')
+                if se and se != "-":
+                    setores[tk] = se
     seen = set()
     res = [t for t in out if not (t in seen or seen.add(t))]
-    return res or None
+    return (res or None), setores
 
 
-def _fetch_ishares_tickers(url: str, timeout: int = 30) -> list[str] | None:
-    """Baixa e parseia o CSV de holdings. Retorna None em qualquer falha (-> fallback)."""
+def _fetch_ishares_tickers(url: str, timeout: int = 30):
+    """Baixa e parseia o CSV. Retorna (tickers|None, {ticker: setor})."""
     try:
         import requests
         headers = {"User-Agent": "Mozilla/5.0 (screener-b3)"}
@@ -116,7 +121,15 @@ def _fetch_ishares_tickers(url: str, timeout: int = 30) -> list[str] | None:
         return _parse_ishares_csv(r.text)
     except Exception as e:
         print(f"[universo] falha ao baixar iShares ({e}) — usando lista estática.")
-        return None
+        return None, {}
+
+
+_ISHARES_SECTORS: dict[str, str] = {}
+
+
+def get_ishares_sectors() -> dict[str, str]:
+    """{ticker: setor} coletado dos CSVs no último get_universe (setor GICS oficial)."""
+    return dict(_ISHARES_SECTORS)
 
 
 def get_universe(which: str = "both") -> dict[str, list[str]]:
@@ -141,11 +154,13 @@ def get_universe(which: str = "both") -> dict[str, list[str]]:
     if which in ("smll", "both"):
         plan.append(("SMALL11", SMAL11_URL, SMLL))
 
+    _ISHARES_SECTORS.clear()
     for origem, url, estatica in plan:
-        tks = None if static_only else _fetch_ishares_tickers(url)
+        tks, setores = (None, {}) if static_only else _fetch_ishares_tickers(url)
         if tks:
             print(f"[universo] {origem}: {len(tks)} ativos da iShares (composição oficial).")
             _add(tks, origem)
+            _ISHARES_SECTORS.update(setores)
         else:
             print(f"[universo] {origem}: {len(_dedup(estatica))} ativos da lista estática.")
             _add(_dedup(estatica), origem)

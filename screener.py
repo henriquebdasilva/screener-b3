@@ -21,7 +21,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from universe import get_universe
+from universe import get_universe, get_ishares_sectors
 from datafeed import get_fundamentals, get_prices
 from scoring import score_universe
 from breakout import detect_breakout
@@ -36,9 +36,10 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
         max_net_debt_equity=1.5, split_by_origin=True, group_top=None,
-        use_basileia=True):
+        use_basileia=True, cyclical_penalty=0.25):
 
     tickers = get_universe(universe)
+    ishares_setores = get_ishares_sectors()      # {ticker: setor GICS oficial}
     items = list(tickers.items())
     if limit:
         items = items[:limit]
@@ -53,7 +54,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     for i, (tk, orig) in enumerate(items, 1):
         origem[tk] = "+".join(orig)
         try:
-            f = get_fundamentals(tk)
+            f = get_fundamentals(tk, sector_hint=ishares_setores.get(tk, ""))
             funds.append(f)
             mcap[tk] = f.market_cap
         except Exception as e:
@@ -150,6 +151,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     # ---- Safety das financeiras via Índice de Basileia (IF.data / BC) ----
     df["basileia"] = float("nan")
+    _mexeu_safety = False
     if use_basileia:
         try:
             from basileia import fetch_basileia_map, basileia_safety
@@ -159,11 +161,38 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 if tk in df.index:
                     df.loc[tk, "basileia"] = pct
                     df.loc[tk, "safety"] = basileia_safety(pct)
-            if bmap:
-                from scoring import investment_series
-                df["investment"] = investment_series(df).round(2)
+            _mexeu_safety = bool(bmap)
         except Exception as e:
             print(f"[basileia] ignorado ({e}).")
+
+    # ---- Safety das SEGURADORAS via índice de solvência (tabela manual) ----
+    df["solvencia"] = float("nan")
+    try:
+        from solvencia import fetch_solvencia_map, solvencia_safety
+        segs = [t for t in df.index if fin_map.get(t, False)]
+        smap = fetch_solvencia_map(segs)
+        for tk, idx in (smap or {}).items():
+            if tk in df.index:
+                df.loc[tk, "solvencia"] = idx
+                df.loc[tk, "safety"] = solvencia_safety(idx)
+        _mexeu_safety = _mexeu_safety or bool(smap)
+    except Exception as e:
+        print(f"[solvencia] ignorado ({e}).")
+
+    # ---- Penalidade de ciclicidade no Safety (setores cíclicos -> Safety menor) ----
+    from scoring import cyclicality
+    df["ciclicidade"] = df["setor"].map(cyclicality)
+    if cyclical_penalty and cyclical_penalty > 0:
+        fin_series = pd.Series({t: fin_map.get(t, False) for t in df.index})
+        fator = (1.0 - cyclical_penalty * df["ciclicidade"]).clip(lower=0.0)
+        # aplica só a não-financeiras (financeiras têm Safety da Basileia) e onde há Safety
+        aplica = (~fin_series) & df["safety"].notna()
+        df.loc[aplica, "safety"] = (df.loc[aplica, "safety"] * fator[aplica]).round(2)
+        _mexeu_safety = _mexeu_safety or bool(aplica.any())
+
+    if _mexeu_safety:
+        from scoring import investment_series
+        df["investment"] = investment_series(df).round(2)
 
     # ---- Consistência (8 critérios) e mescla na nota ----
     from criteria import consistency as _consistency
@@ -273,7 +302,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     cols = [
             "origem", "grupo", "setor", "investment", "investment_base", "consistencia",
-            "basileia",
+            "basileia", "solvencia", "ciclicidade",
             "quality", "value", "safety", "dividend",
             "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
             "passa_checklist", "mais_5a_bolsa", "sem_prejuizo_anual", "lucro_20t",
@@ -417,6 +446,9 @@ def parse_args():
                    help="não separar por grupo; usa --top-quantile no universo inteiro")
     p.add_argument("--no-basileia", action="store_true",
                    help="não buscar Índice de Basileia (IF.data) p/ o Safety das financeiras")
+    p.add_argument("--cyclical-penalty", type=float, default=0.25,
+                   help="penalidade máx. no Safety p/ setores cíclicos (0-1; default 0.25; "
+                        "0 desliga). Ex.: setor cíclico=1,0 com 0.25 perde 25%% do Safety.")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -453,4 +485,4 @@ if __name__ == "__main__":
         consistency_weight=a.consistency_weight,
         max_net_debt_equity=a.max_net_debt_equity,
         split_by_origin=not a.no_split, group_top=a.group_top,
-        use_basileia=not a.no_basileia)
+        use_basileia=not a.no_basileia, cyclical_penalty=a.cyclical_penalty)

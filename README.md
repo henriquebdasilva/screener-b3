@@ -177,6 +177,29 @@ Além do checklist, há um **filtro absoluto de alavancagem**: não-financeiras 
 **derivado** dos índices disponíveis — `(Dív.Líq/EBITDA × P/VP) / (EV/EBITDA − Dív.Líq/EBITDA)`
 — e vira `n/d` (não corta) quando o EBITDA implícito é ~0/negativo; financeiras são poupadas.
 
+O **setor** de cada papel vem, por ordem de precedência: (1) `SECTOR_OVERRIDE` manual em
+`datafeed.py`; (2) o **CSV oficial da iShares/BlackRock** (classificação GICS em português,
+já baixado para montar o universo — mais confiável que o yfinance, que erra holdings); (3)
+yfinance/fundamentus. Isso corrige sozinho casos como a Itaúsa (ITSA4), que o yfinance
+rotula como "Industrials" mas a BlackRock classifica como "Financeiro".
+
+**Safety das seguradoras via solvência (manual).** A SUSEP não tem API aberta, então o
+Safety das seguradoras vem de uma **tabela manual** (`solvencia.py`, `SOLVENCIA_MANUAL` ou
+env em JSON) com o **índice de solvência PLA/CMR** (piso 1,0 → 0; teto 1,5 → 100), no mesmo
+molde da Basileia. Coluna `solvencia`. Alguns papéis mal classificados pelo yfinance têm o
+**setor forçado** por `SECTOR_OVERRIDE` em `datafeed.py` (ex.: Itaúsa/ITSA4, uma holding
+financeira que às vezes vem como "Industrials", e as seguradoras como "Insurance").
+
+**Penalidade de ciclicidade no Safety.** O Safety mede solidez financeira, mas não a
+ciclicidade do negócio — uma siderúrgica/incorporadora tende a ser mais arriscada que uma
+geradora/saneamento mesmo com balanço parecido. Então o Safety das **não-financeiras** leva
+uma penalidade por setor cíclico: `safety × (1 − k × ciclicidade)`, com ciclicidade 0
+(defensivo: utilities, saneamento, consumo básico) a 1 (cíclico: mineração, siderurgia,
+consumo discricionário, incorporação) — mapa em `scoring.py`, aproveitando que o setor do
+yfinance já separa "Consumer Cyclical/Defensive". `k` é `--cyclical-penalty` (default 0,25;
+0 desliga). Financeiras são poupadas (Safety vem da Basileia). Coluna `ciclicidade` na
+planilha.
+
 **Safety das financeiras via Basileia (IF.data/BC).** Bancos e seguradoras não têm os
 indicadores de balanço usados no Safety (Dív.Líq/EBITDA, liquidez, Dív/Patrim), então ficam
 `n/d`. Para preencher, o app busca o **Índice de Basileia** na **API Olinda do IF.data** do

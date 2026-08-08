@@ -121,3 +121,41 @@ def investment_series(df: pd.DataFrame) -> pd.Series:
         vals = {k: row.get(k) for k in W}
         return _wmean(vals, W)
     return df.apply(_wm, axis=1)
+
+
+# ---------------- Ciclicidade setorial (penaliza o Safety de setores cíclicos) ----------
+# 1.0 = altamente cíclico  ...  0.0 = defensivo. Chaves casadas por substring (normalizado),
+# cobrindo os setores do yfinance (inglês) e alguns sinônimos em português.
+SECTOR_CYCLICALITY = {
+    "basic materials": 1.0, "materiais basicos": 1.0, "materiais": 1.0, "mineracao": 1.0,
+    "siderurgia": 1.0, "papel": 0.9, "quimic": 0.9,
+    "energy": 0.9, "energia": 0.9, "petroleo": 0.9, "oil": 0.9, "gas": 0.9,
+    "consumer cyclical": 0.9, "consumo ciclico": 0.9, "consumo discricionario": 0.9,
+    "discricionar": 0.9, "varejo": 0.8, "vestuario": 0.9, "auto": 0.9, "viagens": 0.9,
+    "turismo": 0.9,
+    "real estate": 0.8, "imobiliar": 0.8, "construc": 0.85, "incorporac": 0.85,
+    "industrials": 0.7, "industrial": 0.7, "industriais": 0.7, "bens industriais": 0.7,
+    "transporte": 0.7, "aere": 0.95, "airlines": 0.95,
+    "technology": 0.5, "tecnologia": 0.5,
+    "communication services": 0.4, "comunica": 0.4, "midia": 0.5,
+    "financial services": 0.4, "financ": 0.4, "banco": 0.4, "insurance": 0.3, "seguro": 0.3,
+    "healthcare": 0.2, "saude": 0.2,
+    "consumer defensive": 0.15, "consumo defensivo": 0.15, "consumo nao ciclico": 0.15,
+    "consumo basico": 0.15, "alimentos": 0.2, "bebidas": 0.15,
+    "utilities": 0.1, "utilidade publica": 0.1, "energia eletrica": 0.1, "saneamento": 0.1,
+    "agua": 0.1, "telecom": 0.3,
+}
+CYCLICALITY_DEFAULT = 0.0     # setor desconhecido -> não penaliza (conservador)
+
+
+def cyclicality(setor) -> float:
+    """Fator de ciclicidade 0..1 a partir do nome do setor (0 = defensivo)."""
+    if not setor:
+        return CYCLICALITY_DEFAULT
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(setor)).encode("ascii", "ignore").decode().lower()
+    best = None
+    for chave, fator in SECTOR_CYCLICALITY.items():
+        if chave in s:
+            best = fator if best is None else max(best, fator)
+    return best if best is not None else CYCLICALITY_DEFAULT

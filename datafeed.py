@@ -164,23 +164,42 @@ def _from_yfinance(ticker: str) -> Fundamentals:
     return f
 
 
-def get_fundamentals(ticker: str) -> Fundamentals:
+# Setor forçado por ticker: holdings/papéis que o yfinance/fundamentus rotulam errado.
+# Ex.: Itaúsa (holding financeira) às vezes vem como "Industrials".
+SECTOR_OVERRIDE = {
+    "ITSA4": "Financial Services", "ITSA3": "Financial Services",   # Itaúsa (holding)
+    "BRAP4": "Basic Materials", "BRAP3": "Basic Materials",         # Bradespar (Vale)
+    "SIMH3": "Industrials",                                          # Simpar (holding logística)
+    # seguradoras (garante is_financial() e evita penalidade de ciclicidade indevida)
+    "BBSE3": "Insurance", "PSSA3": "Insurance", "CXSE3": "Insurance", "WIZC3": "Insurance",
+    "IRBR3": "Insurance", "CSAB4": "Insurance",
+}
+
+
+def get_fundamentals(ticker: str, sector_hint: str = "") -> Fundamentals:
     f = _from_fundamentus(ticker)
     if f is None:
-        return _from_yfinance(ticker)
-    # completa buracos com yfinance
-    yf_needed = any(pd.isna(getattr(f, a)) for a in
-                    ("pl", "pvp", "dy", "roe", "ev_ebitda", "div_patrim",
-                     "liq_corr", "market_cap"))
-    if yf_needed:
-        yf_f = _from_yfinance(ticker)
-        for a in ("pl", "pvp", "dy", "roe", "roic", "mrg_liq", "ev_ebitda",
-                  "div_liq_ebitda", "div_patrim", "liq_corr", "cresc_5a",
-                  "market_cap"):
-            if pd.isna(getattr(f, a)) and pd.notna(getattr(yf_f, a)):
-                setattr(f, a, getattr(yf_f, a))
-        if not f.setor and yf_f.setor:
-            f.setor = yf_f.setor
+        f = _from_yfinance(ticker)
+    else:
+        # completa buracos com yfinance
+        yf_needed = any(pd.isna(getattr(f, a)) for a in
+                        ("pl", "pvp", "dy", "roe", "ev_ebitda", "div_patrim",
+                         "liq_corr", "market_cap"))
+        if yf_needed:
+            yf_f = _from_yfinance(ticker)
+            for a in ("pl", "pvp", "dy", "roe", "roic", "mrg_liq", "ev_ebitda",
+                      "div_liq_ebitda", "div_patrim", "liq_corr", "cresc_5a",
+                      "market_cap"):
+                if pd.isna(getattr(f, a)) and pd.notna(getattr(yf_f, a)):
+                    setattr(f, a, getattr(yf_f, a))
+            if not f.setor and yf_f.setor:
+                f.setor = yf_f.setor
+    # precedência de setor: override manual > iShares (hint) > yfinance/fundamentus
+    if sector_hint:
+        f.setor = sector_hint
+    ov = SECTOR_OVERRIDE.get((f.ticker or ticker).upper())
+    if ov:
+        f.setor = ov
     return f
 
 
