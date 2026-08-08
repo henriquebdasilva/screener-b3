@@ -137,10 +137,41 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
         return _get(url) or []
 
     tipo = int(os.getenv("BASILEIA_TIPO", "2"))
-    rel = int(os.getenv("BASILEIA_RELATORIO", "1"))
+    # a Basileia fica no relatório de "Informações/Índices de Capital" (não no Resumo=1).
+    # varremos candidatos; o número certo é fixável por env BASILEIA_RELATORIO.
+    env_rel = os.getenv("BASILEIA_RELATORIO", "").strip()
+    relatorios = [env_rel] if env_rel else ["11", "12", "13", "14", "2", "3", "4", "6"]
+
+    # catálogo de relatórios (debug) — ajuda a achar o nº do relatório de capital
+    if debug:
+        for probe in (f"{BASE}/ListaDeRelatorio?$format=json",
+                      f"{BASE}/ListaDeRelatorio(AnoMes=@AnoMes)?@AnoMes="
+                      f"{_candidate_anomes()[1]}&$format=json"):
+            got = _get(probe)
+            if got:
+                for it in got:
+                    n = it.get("Relatorio") or it.get("NumeroRelatorio") or it.get("Numero")
+                    nm = (it.get("NomeRelatorio") or it.get("Nome")
+                          or it.get("Descricao") or it.get("NomeColuna"))
+                    print(f"   [basileia][catalogo] {n} = {nm}")
+                break
 
     for anomes in _candidate_anomes():
-        registros = _valores(anomes, tipo, rel)
+        registros = None
+        for rel in relatorios:
+            regs = _valores(anomes, tipo, rel.strip())
+            if not regs:
+                continue
+            tem_bas = any("basileia" in str(r.get("NomeColuna", "")).lower()
+                          or "basileia" in str(r.get("DescricaoColuna", "")).lower()
+                          for r in regs)
+            if debug:
+                cols = sorted({str(r.get("NomeColuna")) for r in regs})[:12]
+                print(f"   [basileia] {anomes} rel={rel}: {len(regs)} regs | "
+                      f"basileia? {tem_bas} | colunas: {cols}")
+            if tem_bas:
+                registros = regs
+                break
         if not registros:
             continue
 
