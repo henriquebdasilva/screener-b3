@@ -18,7 +18,7 @@
 | MILS3    | SMALL11        | Industrials            |        72.8  |     86.2  |   51.26 |    70.16 |      53.02 | Não             | Lateral  |   15.6  |      -1.32827  |
 | LAVV3    | SMALL11        | Real Estate            |        72.47 |     66.75 |   53.18 |    90.46 |      91.28 | Não             | Em Baixa |    9.44 |     -14.6474   |
 | CURY3    | BOVA11+SMALL11 | Real Estate            |        71.56 |     90.22 |   32.94 |    62.96 |      80.54 | Não             | Em Baixa |   31.36 |      -2.09178  |
-| TGMA3    | SMALL11        | Industrials            |        70.78 |     78.88 |   32.4  |    83.87 |      81.88 | Não             | Em Alta  |   33.48 |       0.570738 |
+| TGMA3    | SMALL11        | Industrials            |        70.83 |     78.88 |   32.4  |    83.87 |      82.55 | Não             | Em Alta  |   33.48 |       0.570738 |
 | PETR4    | BOVA11         | Energy                 |        70.29 |     86.31 |   75.49 |    31.1  |      99.33 | Não             | Em Alta  |   40.87 |      -5.06388  |
 | PLPL3    | SMALL11        | Real Estate            |        69.86 |     81.33 |   74.98 |    60.59 |      59.06 | Não             | Em Baixa |    7.02 |     -11.4754   |
 | RIAA3    | SMALL11        | Consumer Cyclical      |        69.79 |     66.09 |   82.89 |    54.79 |      89.26 | Não             | Em Baixa |    7.76 |      -7.83848  |
@@ -39,7 +39,7 @@
 | ALPA4    | SMALL11        | Consumer Cyclical      |        63.62 |     75.3  |   36.35 |    64.31 |      72.48 | Não             | Lateral  |   13.53 |       8.41346  |
 | ITSA4    | BOVA11         | Industrials            |        63.36 |     61.8  |   27.44 |    87.26 |      77.18 | Não             | Lateral  |   13.21 |      -4.82709  |
 | EVEN3    | SMALL11        | Real Estate            |        63.22 |     44.73 |   72.12 |    84.66 |      75.17 | Não             | Em Baixa |    4.56 |     -10.7632   |
-| BRSR6    | SMALL11        | Financial Services     |        63.1  |     49.13 |   82.21 |   nan    |      82.55 | Não             | Lateral  |   13.75 |      -4.84429  |
+| BRSR6    | SMALL11        | Financial Services     |        63.17 |     49.13 |   82.21 |   nan    |      83.22 | Não             | Lateral  |   13.75 |      -4.84429  |
 | ABCB4    | SMALL11        | Financial Services     |        62.67 |     53.24 |   62.43 |   nan    |      81.21 | Não             | Em Baixa |   23.53 |      -2.60761  |
 | TOTS3    | BOVA11+SMALL11 | Technology             |        62.42 |     87.32 |   29.68 |    53.03 |      14.09 | Não             | Em Alta  |   32.21 |      -0.922791 |
 | TFCO4    | SMALL11        | Consumer Cyclical      |        62.28 |     81.99 |   22.89 |    86.38 |      16.11 | Não             | Em Baixa |   14.61 |      -2.66489  |
@@ -49,7 +49,7 @@
 | BLAU3    | SMALL11        | Healthcare             |        60.85 |     60.49 |   56.22 |    87.97 |      38.93 | Não             | Em Baixa |    8.73 |      -9.81406  |
 | CXSE3    | BOVA11         | Financial Services     |        60.72 |     64.67 |   24.29 |   nan    |      78.52 | Não             | Em Baixa |   19.32 |     -12.3584   |
 | BBDC3    | BOVA11         | Financial Services     |        60.17 |     51.13 |   60.59 |   nan    |      71.81 | Não             | Lateral  |   15.15 |      -8.19511  |
-| ABEV3    | BOVA11         | Consumer Defensive     |        59.91 |     78.54 |   18.34 |    54.08 |      50.34 | Não             | Em Baixa |   15.48 |      -4.02976  |
+| ABEV3    | BOVA11         | Consumer Defensive     |        59.87 |     78.54 |   18.14 |    54.08 |      50.34 | Não             | Em Baixa |   15.48 |      -4.02976  |
 | CMIG4    | BOVA11         | Utilities              |        59.78 |     56.32 |   52.01 |    38.73 |      95.3  | Não             | Em Alta  |   10.92 |      -3.19149  |
 | SANB11   | BOVA11         | Financial Services     |        59.72 |     54.02 |   55.84 |   nan    |      66.44 | Não             | Lateral  |   29.27 |      -0.712344 |
 | ALUP11   | SMALL11        | Utilities              |        59.55 |     66.56 |   51.56 |    67.82 |      48.32 | Não             | Em Baixa |   32.06 |      -4.89468  |
@@ -60,9 +60,9 @@
 | BBDC4    | BOVA11         | Financial Services     |        58.07 |     51.13 |   53.24 |   nan    |      70.47 | Não             | Em Baixa |   17.31 |      -8.65723  |
 | TAEE11   | BOVA11+SMALL11 | Utilities              |        57.65 |     74.68 |   27.16 |    50.76 |      84.56 | Não             | Em Baixa |   39.25 |      -5.62635  |
 | HYPE3    | BOVA11+SMALL11 | Healthcare             |        57.59 |     61.02 |   44.93 |    66.03 |      40.94 | Pivô de alta    | Em Alta  |   21.6  |      -0.230943 |
-| WEGE3    | BOVA11         | Industrials            |        57.31 |     86.21 |    8.46 |    63.66 |      20.13 | Não             | Lateral  |   48.12 |      -2.13545  |
 | BMOB3    | SMALL11        | Communication Services |        57.26 |     56.34 |   27.79 |    74.59 |      54.36 | Não             | Lateral  |   22.85 |      -4.91053  |
-| CPFE3    | BOVA11         | Utilities              |        56.71 |     75.51 |   32.07 |    22.81 |      83.89 | Não             | Lateral  |   44.8  |      -5.06463  |
+| WEGE3    | BOVA11         | Industrials            |        57.26 |     86.21 |    8.25 |    63.66 |      20.13 | Não             | Lateral  |   48.12 |      -2.13545  |
+| CPFE3    | BOVA11         | Utilities              |        56.71 |     75.51 |   32.89 |    22.81 |      81.88 | Não             | Lateral  |   44.8  |      -5.06463  |
 | SBSP3    | BOVA11         | Utilities              |        56.57 |     77.5  |   34.6  |    43.89 |      24.83 | Não             | Em Baixa |   26.89 |      -8.22526  |
 | CMIN3    | BOVA11         | Basic Materials        |        56.57 |     82.65 |   31.62 |    30.89 |      93.96 | Não             | Em Alta  |    5.45 |      -8.86288  |
 | LOGG3    | SMALL11        | Real Estate            |        56.42 |     53.26 |   45.63 |    36.54 |      89.93 | Não             | Em Baixa |   25.25 |      -4.89642  |
@@ -95,7 +95,7 @@
 | MILS3    | SMALL11        | Industrials        |        72.8  |     86.2  |   51.26 |    70.16 |      53.02 | Não             | Lateral  |
 | LAVV3    | SMALL11        | Real Estate        |        72.47 |     66.75 |   53.18 |    90.46 |      91.28 | Não             | Em Baixa |
 | CURY3    | BOVA11+SMALL11 | Real Estate        |        71.56 |     90.22 |   32.94 |    62.96 |      80.54 | Não             | Em Baixa |
-| TGMA3    | SMALL11        | Industrials        |        70.78 |     78.88 |   32.4  |    83.87 |      81.88 | Não             | Em Alta  |
+| TGMA3    | SMALL11        | Industrials        |        70.83 |     78.88 |   32.4  |    83.87 |      82.55 | Não             | Em Alta  |
 | PETR4    | BOVA11         | Energy             |        70.29 |     86.31 |   75.49 |    31.1  |      99.33 | Não             | Em Alta  |
 | PLPL3    | SMALL11        | Real Estate        |        69.86 |     81.33 |   74.98 |    60.59 |      59.06 | Não             | Em Baixa |
 | RIAA3    | SMALL11        | Consumer Cyclical  |        69.79 |     66.09 |   82.89 |    54.79 |      89.26 | Não             | Em Baixa |
