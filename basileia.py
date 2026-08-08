@@ -38,17 +38,41 @@ BANKS = {
     "BRSR6":  ["BANRISUL"],
     "BPAN4":  ["BANCO PAN", "PAN", "PANAMERICANO"],
     "PINE4":  ["PINE"],
+    "BRBI11": ["BR PARTNERS", "BRPARTNERS"],
+    "BMIN4":  ["MERCANTIL DE INVESTIMENTOS", "MERCANTIL INVEST"],
+    "BMEB4":  ["MERCANTIL DO BRASIL"],
+    "BEES3":  ["BANESTES"],
+    "BAZA3":  ["AMAZONIA", "BANCO DA AMAZONIA", "BASA"],
+    "BSLI3":  ["BRASILIA", "BRB"],
+    "BNBR3":  ["NORDESTE", "BANCO DO NORDESTE"],
+    "BGIP4":  ["BANESE"],
 }
 
 # ------------------------------------------------------------------------------------------
-# TABELA MANUAL — preencha o Índice de Basileia (%) por ticker e a data-base de referência.
-# Ex.: {"ITUB4": 15.3, "BBAS3": 14.9, "BBDC4": 15.1, ...}. Deixe vazio o que não tiver.
-# (Vazio por padrão de propósito: não invento números — preencha com dados oficiais.)
+# TABELA MANUAL — Índice de Basileia (%) por ticker. Atualize ~1x por trimestre com os dados
+# oficiais (IF.data web "Informações de Capital" ou release/RI de cada banco).
 BASILEIA_MANUAL: dict[str, float] = {
-    # "ITUB4": 0.0,
-    # "BBAS3": 0.0,
+    "BRBI11": 20.63,   # BR Partners
+    "BRSR6":  17.35,   # Banrisul
+    "ABCB4":  16.87,   # ABC Brasil
+    "BMIN4":  16.40,   # Mercantil de Investimentos
+    "ITUB4":  15.95,   # Itaú Unibanco
+    "ITUB3":  15.95,
+    "BMEB4":  15.75,   # Mercantil do Brasil
+    "BBDC3":  15.65,   # Bradesco
+    "BBDC4":  15.65,
+    "BPAC11": 15.65,   # BTG Pactual
+    "SANB11": 14.99,   # Santander
+    "BBAS3":  14.56,   # Banco do Brasil
+    "BEES3":  14.09,   # Banestes
+    "PINE4":  14.09,   # Pine
+    "BAZA3":  13.83,   # Banco da Amazônia
+    "BSLI3":  13.70,   # BRB - Banco de Brasília
+    "BNBR3":  13.48,   # Banco do Nordeste
+    "BGIP4":  12.85,   # Banese
+    "BMGB4":  12.81,   # BMG
 }
-BASILEIA_MANUAL_REF = "preencha em basileia.py (BASILEIA_MANUAL)"
+BASILEIA_MANUAL_REF = "IF.data (Informações de Capital) — atualize a cada trimestre"
 
 BASILEIA_FLOOR = 11.0     # piso regulatório (%) -> nota 0
 BASILEIA_TOP = 18.0       # a partir daqui -> nota 100
