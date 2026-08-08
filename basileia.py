@@ -19,17 +19,17 @@ BASE = "https://olinda.bcb.gov.br/olinda/servico/IFDATA/versao/v1/odata"
 
 # ticker -> (raiz do CNPJ 8 dígitos | None, pistas de nome p/ casar no cadastro do IF.data)
 BANKS = {
-    "BBAS3":  ("00000000", ["BANCO DO BRASIL"]),
-    "ITUB4":  ("60701190", ["ITAU UNIBANCO", "ITAÚ UNIBANCO"]),
-    "ITUB3":  ("60701190", ["ITAU UNIBANCO", "ITAÚ UNIBANCO"]),
+    "BBAS3":  ("00000000", ["BANCO DO BRASIL", "BCO DO BRASIL", "BB"]),
+    "ITUB4":  ("60701190", ["ITAU"]),
+    "ITUB3":  ("60701190", ["ITAU"]),
     "BBDC4":  ("60746948", ["BRADESCO"]),
     "BBDC3":  ("60746948", ["BRADESCO"]),
     "SANB11": ("90400888", ["SANTANDER"]),
-    "BPAC11": ("30306294", ["BTG PACTUAL"]),
-    "ABCB4":  ("28195667", ["ABC BRASIL"]),
+    "BPAC11": ("30306294", ["BTG"]),
+    "ABCB4":  ("28195667", ["ABC BRASIL", "ABC-BRASIL", "ABCBRASIL"]),
     "BMGB4":  ("61186680", ["BMG"]),
-    "BRSR6":  ("92702067", ["BANRISUL", "ESTADO DO RIO GRANDE DO SUL"]),
-    "BPAN4":  ("59285411", ["BANCO PAN", "PANAMERICANO"]),
+    "BRSR6":  ("92702067", ["BANRISUL"]),
+    "BPAN4":  ("59285411", ["BANCO PAN", "PAN", "PANAMERICANO"]),
     "PINE4":  ("62144175", ["PINE"]),
 }
 
@@ -51,6 +51,13 @@ def basileia_safety(pct, floor: float = BASILEIA_FLOOR, top: float = BASILEIA_TO
 
 def _digits(s) -> str:
     return "".join(ch for ch in str(s) if ch.isdigit())
+
+
+def _norm(s) -> str:
+    """Uppercase, sem acentos, só A-Z0-9 (p/ casar nomes curtos do IF.data)."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode()
+    return "".join(ch for ch in s.upper() if ch.isalnum())
 
 
 def _find_basileia_in_record(rec: dict):
@@ -101,36 +108,13 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
 
     _err_shown = [0]
 
-    # --- sondagem de metadados (só no debug): descobre relatórios válidos e formato ---
-    if debug:
-        try:
-            rr = requests.get(f"{BASE}/ListaDeRelatorio?$format=json&$top=80", timeout=40)
-            if rr.status_code == 200:
-                for it in rr.json().get("value", []):
-                    num = it.get("NumeroRelatorio") or it.get("Numero") or it.get("Codigo")
-                    nome = it.get("NomeRelatorio") or it.get("Nome") or it.get("Descricao")
-                    print(f"   [basileia][rel] {num} = {nome}")
-            else:
-                print(f"   [basileia] ListaDeRelatorio HTTP {rr.status_code}: {rr.text[:200]}")
-        except Exception as e:
-            print(f"   [basileia] ListaDeRelatorio erro: {e}")
-        for am in _candidate_anomes()[:2]:
-            try:
-                rc = requests.get(
-                    f"{BASE}/IfDataCadastro(AnoMes=@AnoMes)?@AnoMes={am}&$format=json&$top=1",
-                    timeout=40)
-                txt = rc.text[:220]
-                print(f"   [basileia] Cadastro {am}: HTTP {rc.status_code} {txt}")
-            except Exception as e:
-                print(f"   [basileia] Cadastro {am} erro: {e}")
-
     def _get(url):
         try:
             r = requests.get(url, timeout=40)
             if r.status_code != 200:
-                if debug and _err_shown[0] < 4:      # mostra o corpo do erro do BC
+                if debug and _err_shown[0] < 3:
                     _err_shown[0] += 1
-                    print(f"   [basileia] HTTP {r.status_code}: {r.text[:280]}")
+                    print(f"   [basileia] HTTP {r.status_code}: {r.text[:200]}")
                 return None
             return r.json().get("value", [])
         except Exception as e:
@@ -138,58 +122,75 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
                 print(f"   [basileia] erro: {e}")
             return None
 
-    def _url(anomes, tipo, rel, quote_rel):
-        # @ LITERAL (o requests codificaria como %40 e o Olinda rejeita)
-        r = f"'{rel}'" if quote_rel else str(rel)
-        return (f"{BASE}/IfDataValores(AnoMes=@AnoMes,TipoInstituicao=@TipoInstituicao,"
-                f"Relatorio=@Relatorio)?@AnoMes={anomes}&@TipoInstituicao={tipo}"
-                f"&@Relatorio={r}&$format=json")
+    def _cadastro(anomes):
+        """CodInst -> NomeInstituicao (para casar tickers por nome)."""
+        url = (f"{BASE}/IfDataCadastro(AnoMes=@AnoMes)?@AnoMes={anomes}"
+               f"&$format=json&$select=CodInst,NomeInstituicao&$top=5000")
+        vals = _get(url) or []
+        return {r.get("CodInst"): str(r.get("NomeInstituicao") or "").upper() for r in vals}
 
-    # relatórios candidatos que costumam conter Basileia (Resumo / Informações de Capital)
-    relatorios = os.getenv("BASILEIA_RELATORIOS", "1,11,2").split(",")
-    tipos = os.getenv("BASILEIA_TIPOS", "2,1,3,4").split(",")
+    def _valores(anomes, tipo=2, rel=1):
+        # Relatório 1 = "Resumo" (contém o Índice de Basileia). Relatorio como TEXTO ('1').
+        url = (f"{BASE}/IfDataValores(AnoMes=@AnoMes,TipoInstituicao=@TipoInstituicao,"
+               f"Relatorio=@Relatorio)?@AnoMes={anomes}&@TipoInstituicao={tipo}"
+               f"&@Relatorio='{rel}'&$format=json")
+        return _get(url) or []
+
+    tipo = int(os.getenv("BASILEIA_TIPO", "2"))
+    rel = int(os.getenv("BASILEIA_RELATORIO", "1"))
 
     for anomes in _candidate_anomes():
-        registros = []
-        for tipo in tipos:
-            for rel in relatorios:
-                for quote_rel in (False, True):      # tenta Relatorio sem e com aspas
-                    vals = _get(_url(anomes, tipo.strip(), rel.strip(), quote_rel))
-                    if vals:
-                        if debug and registros == []:
-                            print(f"   [basileia] OK {anomes} tipo={tipo} rel={rel} "
-                                  f"quote={quote_rel}: {len(vals)} regs | chaves: "
-                                  f"{list(vals[0].keys())[:14]}")
-                        registros.extend(vals)
-                        break                        # achou o formato -> não repete
+        registros = _valores(anomes, tipo, rel)
         if not registros:
             continue
 
+        # 1) Índice de Basileia por CodInst: linha cujo NomeColuna/Descrição contém "basileia"
+        basileia_por_inst = {}
+        col_ex = set()
+        for rec in registros:
+            nome_col = str(rec.get("NomeColuna") or "").lower()
+            desc_col = str(rec.get("DescricaoColuna") or "").lower()
+            if "basileia" in nome_col or "basileia" in desc_col:
+                cod = rec.get("CodInst")
+                val = rec.get("Saldo")
+                try:
+                    fv = float(str(val).replace(",", "."))
+                    if cod and not math.isnan(fv):
+                        basileia_por_inst[cod] = fv
+                except Exception:
+                    pass
+            elif debug and len(col_ex) < 40:
+                col_ex.add(rec.get("NomeColuna"))
+
+        if not basileia_por_inst:
+            if debug:
+                print(f"   [basileia] {anomes}: {len(registros)} regs, nenhuma coluna "
+                      f"'Basileia'. Exemplos de NomeColuna: {sorted(c for c in col_ex if c)[:20]}")
+            continue
+
+        # 2) mapa CodInst -> nome (para casar por nome do banco)
+        cad = _cadastro(anomes)
+
+        # 3) casa cada ticker por nome (via cadastro), com normalização
         out = {}
+        cad_norm = {cod: _norm(nome) for cod, nome in cad.items()}
         for tk in alvos:
-            cnpj_root, nomes = BANKS[tk]
-            achou = None
-            for rec in registros:
-                # casa por CNPJ (raiz) ou por nome (substring)
-                rec_cnpj = _digits(rec.get("CNPJ") or rec.get("Cnpj") or "")[:8]
-                rec_nome = str(rec.get("NomeInstituicao") or rec.get("Instituicao")
-                               or rec.get("Nome") or "").upper()
-                match = (cnpj_root and rec_cnpj == cnpj_root) or \
-                        any(h.upper() in rec_nome for h in nomes)
-                if not match:
-                    continue
-                val = _find_basileia_in_record(rec)
-                if val is not None:
-                    achou = val
+            _, nomes = BANKS[tk]
+            hints = [_norm(h) for h in nomes]
+            for cod, pct in basileia_por_inst.items():
+                nome_inst = cad_norm.get(cod, "")
+                if nome_inst and any(h and h in nome_inst for h in hints):
+                    out[tk] = pct
                     break
-            if achou is not None:
-                out[tk] = achou
         if out:
             print(f"[basileia] IF.data {anomes}: {len(out)} banco(s) com Basileia "
-                  f"({', '.join(sorted(out))}).")
+                  f"({', '.join(f'{k} {v:.1f}%' for k, v in sorted(out.items()))}).")
             return out
+        if debug:
+            print(f"   [basileia] {anomes}: {len(basileia_por_inst)} instituições com "
+                  f"Basileia, mas nenhuma casou. Ex.: "
+                  f"{[cad.get(c) for c in list(basileia_por_inst)[:8]]}")
 
-    print("[basileia] IF.data: não foi possível obter Basileia (Safety das financeiras "
-          "segue n/d). Rode com BASILEIA_DEBUG=1 para ver os campos retornados e ajustar "
-          "os parâmetros (BASILEIA_RELATORIOS / BASILEIA_TIPOS).")
+    print("[basileia] IF.data: não foi possível casar Basileia (Safety das financeiras segue "
+          "n/d). Rode com BASILEIA_DEBUG=on para ver instituições/colunas e ajustar o mapa.")
     return {}
