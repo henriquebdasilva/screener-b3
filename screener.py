@@ -36,7 +36,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
         max_net_debt_equity=1.5, split_by_origin=True, group_top=None,
-        use_basileia=True, cyclical_penalty=0.25):
+        use_basileia=True, cyclical_penalty=0.25, defensive_max_cyc=0.4):
 
     tickers = get_universe(universe)
     ishares_setores = get_ishares_sectors()      # {ticker: setor GICS oficial}
@@ -353,7 +353,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                               top_quantile=top_quantile, min_invest=min_invest),
                               market=resumo, mood=humor,
                               group_pct=(int(round(frac * 100)) if split_by_origin
-                                         and min_invest is None else None))
+                                         and min_invest is None else None),
+                              defensive_cyc=defensive_max_cyc)
             n_graf = int((selecionados["oportunidade_grafica"] != "Não").sum()) \
                 if len(selecionados) else 0
             subject = (f"[Screener B3] {len(selecionados)} papéis nos critérios "
@@ -449,6 +450,9 @@ def parse_args():
     p.add_argument("--cyclical-penalty", type=float, default=0.25,
                    help="penalidade máx. no Safety p/ setores cíclicos (0-1; default 0.25; "
                         "0 desliga). Ex.: setor cíclico=1,0 com 0.25 perde 25%% do Safety.")
+    p.add_argument("--defensive-max-cyc", type=float, default=0.4,
+                   help="teto de ciclicidade p/ a seção 'Defensivas/não-cíclicas' no e-mail "
+                        "(default 0.4)")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -485,4 +489,5 @@ if __name__ == "__main__":
         consistency_weight=a.consistency_weight,
         max_net_debt_equity=a.max_net_debt_equity,
         split_by_origin=not a.no_split, group_top=a.group_top,
-        use_basileia=not a.no_basileia, cyclical_penalty=a.cyclical_penalty)
+        use_basileia=not a.no_basileia, cyclical_penalty=a.cyclical_penalty,
+        defensive_max_cyc=a.defensive_max_cyc)

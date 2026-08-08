@@ -277,8 +277,22 @@ def _group_block(df: pd.DataFrame, title: str) -> str:
     return "".join(parts)
 
 
+def _defensivas_section(df: pd.DataFrame, thr: float) -> str:
+    title = f"Defensivas · não-cíclicas (ciclicidade ≤ {thr:.1f})"
+    if df is None or df.empty:
+        return (f'<h2 style="{_H2}">{title}</h2>'
+                f'<p class="empty">Nenhuma selecionada nesse critério hoje.</p>')
+    sub = ('<p class="sub" style="margin:0 0 8px">Recorte das selecionadas (BOVA11 + SMALL11 '
+           'juntas) em setores menos sensíveis ao ciclo econômico — utilities, saneamento, '
+           'saúde, consumo básico, telecom e financeiro.</p>')
+    rows = "".join(_fmt_row(r) for _, r in df.iterrows())
+    return (f'<h2 style="{_H2}">{title} — {len(df)} papéis</h2>{sub}'
+            f'<table>{_main_head()}{rows}</table>')
+
+
 def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
-               market: dict = None, mood: dict = None, group_pct: int = None) -> str:
+               market: dict = None, mood: dict = None, group_pct: int = None,
+               defensive_cyc: float = 0.4) -> str:
     topo = _market_block(market) + _mood_block(mood)
     suf = f" ({group_pct}% de maior score)" if group_pct else ""
     if selecionados is None or selecionados.empty:
@@ -295,10 +309,18 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                 lambda o: "BOVA11" if "BOVA11" in o else "SMALL11")
         bova = selecionados[grp == "BOVA11"]
         small = selecionados[grp == "SMALL11"]
+        # recorte de não-cíclicas (defensivas), BOVA11 + SMALL11 juntas
+        if "ciclicidade" in selecionados.columns:
+            cyc = pd.to_numeric(selecionados["ciclicidade"], errors="coerce")
+            defensivas = selecionados[cyc <= defensive_cyc].sort_values(
+                "investment", ascending=False)
+        else:
+            defensivas = selecionados.iloc[0:0]
         body = (
             topo
             + _group_block(bova, f"BOVA11 · Ibovespa{suf}")
             + _group_block(small, f"SMALL11 · Small Caps{suf}")
+            + _defensivas_section(defensivas, defensive_cyc)
             + f'<p class="sub" style="margin:14px 0 0">{_TETO_NOTE}</p>'
             + _teses_block(selecionados)
         )
