@@ -171,8 +171,7 @@ SECTOR_OVERRIDE = {
     "BRAP4": "Basic Materials", "BRAP3": "Basic Materials",         # Bradespar (Vale)
     "SIMH3": "Industrials",                                          # Simpar (holding logística)
     # seguradoras (garante is_financial() e evita penalidade de ciclicidade indevida)
-    "BBSE3": "Insurance", "PSSA3": "Insurance", "CXSE3": "Insurance", "WIZC3": "Insurance",
-    "IRBR3": "Insurance", "CSAB4": "Insurance",
+    "BBSE3": "Insurance", "PSSA3": "Insurance", "CXSE3": "Insurance", "IRBR3": "Insurance",
 }
 
 

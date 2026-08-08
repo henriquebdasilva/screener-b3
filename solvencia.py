@@ -21,15 +21,22 @@ import math
 import os
 
 # tickers de seguradoras/resseguradoras (capitalização de referência do Safety por solvência)
-INSURERS = {"BBSE3", "PSSA3", "CXSE3", "WIZC3", "IRBR3", "CSAB4", "CSAB3"}
+# WIZC3 (corretora asset-light) e Sul América (incorporada à Rede D'Or) NÃO entram: não têm
+# índice de solvência PLA/CMR aplicável.
+INSURERS = {"BBSE3", "PSSA3", "CXSE3", "IRBR3"}
 
 # ------------------------------------------------------------------------------------------
 # TABELA MANUAL — índice de solvência PLA/CMR por ticker (ex.: 1,35 = 135%).
 # Atualize ~1x por trimestre com os dados oficiais (release/RI da seguradora ou SUSEP).
+# Preencha o valor e REMOVA o "#" da linha. Deixe comentado o que ainda não tiver.
 SOLVENCIA_MANUAL: dict[str, float] = {
-    # "BBSE3": 1.40,
-    # "PSSA3": 1.60,
+    "BBSE3": 1.305,   # BB Seguridade (Brasilseg) — solvência 130,5% (2T26)
+    "PSSA3": 1.80,    # Porto Seguro — faixa ~180%–210%; usando o piso (2T26)
+    "CXSE3": 1.60,    # Caixa Seguridade — faixa ~160%–180% (operacional); usando o piso
+    "IRBR3": 2.87,    # IRB (resseguro) — 287% (1T26)
 }
+# Referência da data-base (opcional, só para você se lembrar de quando atualizou):
+SOLVENCIA_REF = "BBSE3/PSSA3/CXSE3: 2T26 · IRBR3: 1T26 (piso das faixas p/ PSSA3/CXSE3)"
 
 SOLV_FLOOR = 1.0     # mínimo regulatório (100%) -> nota 0
 SOLV_TOP = 1.5       # colchão de 50% acima do mínimo -> nota 100
