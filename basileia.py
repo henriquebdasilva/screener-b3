@@ -137,26 +137,30 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
         return _get(url) or []
 
     tipo = int(os.getenv("BASILEIA_TIPO", "2"))
-    # a Basileia fica no relatório de "Informações/Índices de Capital" (não no Resumo=1).
-    # varremos candidatos; o número certo é fixável por env BASILEIA_RELATORIO.
+    # a Basileia fica no relatório de "Informações/Índices de Capital".
     env_rel = os.getenv("BASILEIA_RELATORIO", "").strip()
-    relatorios = [env_rel] if env_rel else ["11", "12", "13", "14", "2", "3", "4", "6"]
+    relatorios = ([env_rel] if env_rel else
+                  [str(i) for i in range(1, 21)])   # varre 1..20
 
-    # catálogo de relatórios (debug) — ajuda a achar o nº do relatório de capital
+    # catálogo de relatórios (debug) — número + nome de cada relatório disponível
     if debug:
-        for probe in (f"{BASE}/ListaDeRelatorio?$format=json",
-                      f"{BASE}/ListaDeRelatorio(AnoMes=@AnoMes)?@AnoMes="
-                      f"{_candidate_anomes()[1]}&$format=json"):
+        am0 = _candidate_anomes()[1]
+        for probe in (
+            f"{BASE}/ListaDeRelatorio(AnoMes=@AnoMes,TipoInstituicao=@TipoInstituicao)"
+            f"?@AnoMes={am0}&@TipoInstituicao={tipo}&$format=json",
+            f"{BASE}/ListaDeRelatorio(AnoMes=@AnoMes)?@AnoMes={am0}&$format=json",
+        ):
             got = _get(probe)
             if got:
                 for it in got:
-                    n = it.get("Relatorio") or it.get("NumeroRelatorio") or it.get("Numero")
+                    n = (it.get("Relatorio") or it.get("NumeroRelatorio")
+                         or it.get("Numero") or it.get("Codigo"))
                     nm = (it.get("NomeRelatorio") or it.get("Nome")
-                          or it.get("Descricao") or it.get("NomeColuna"))
-                    print(f"   [basileia][catalogo] {n} = {nm}")
+                          or it.get("Descricao"))
+                    print(f"   [basileia][catalogo] rel={n} :: {nm}")
                 break
 
-    for anomes in _candidate_anomes():
+    for anomes in _candidate_anomes()[:3]:      # 3 trimestres mais recentes
         registros = None
         for rel in relatorios:
             regs = _valores(anomes, tipo, rel.strip())
@@ -165,10 +169,9 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
             tem_bas = any("basileia" in str(r.get("NomeColuna", "")).lower()
                           or "basileia" in str(r.get("DescricaoColuna", "")).lower()
                           for r in regs)
-            if debug:
-                cols = sorted({str(r.get("NomeColuna")) for r in regs})[:12]
-                print(f"   [basileia] {anomes} rel={rel}: {len(regs)} regs | "
-                      f"basileia? {tem_bas} | colunas: {cols}")
+            if debug and tem_bas:
+                print(f"   [basileia] >>> ACHOU Basileia em {anomes} rel={rel} "
+                      f"({len(regs)} regs)")
             if tem_bas:
                 registros = regs
                 break
