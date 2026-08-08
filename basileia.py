@@ -129,11 +129,17 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
         vals = _get(url) or []
         return {r.get("CodInst"): str(r.get("NomeInstituicao") or "").upper() for r in vals}
 
-    def _valores(anomes, tipo=2, rel=1):
-        # Relatório 1 = "Resumo" (contém o Índice de Basileia). Relatorio como TEXTO ('1').
+    def _valores(anomes, tipo=2, rel=5):
+        # Relatório 5 = "Informações de Capital" (Índice de Basileia). Relatorio é TEXTO.
+        # $select reduz o payload (o relatório é grande e o Olinda às vezes dá 500).
+        sel = "CodInst,NomeColuna,DescricaoColuna,Saldo"
         url = (f"{BASE}/IfDataValores(AnoMes=@AnoMes,TipoInstituicao=@TipoInstituicao,"
                f"Relatorio=@Relatorio)?@AnoMes={anomes}&@TipoInstituicao={tipo}"
-               f"&@Relatorio='{rel}'&$format=json")
+               f"&@Relatorio='{rel}'&$select={sel}&$format=json")
+        for _ in range(2):                 # 1 retry em caso de 500 transitório
+            v = _get(url)
+            if v:
+                return v
         return _get(url) or []
 
     tipo = int(os.getenv("BASILEIA_TIPO", "2"))
@@ -141,6 +147,13 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
     # via catálogo ListaDeRelatorio. Fixável/ajustável por env BASILEIA_RELATORIO.
     env_rel = os.getenv("BASILEIA_RELATORIO", "").strip()
     relatorios = [env_rel] if env_rel else ["5"]
+    # o par (TipoInstituicao, Relatorio) precisa ser válido; Basileia é métrica de
+    # conglomerado prudencial -> o tipo pode não ser 2. Testa vários (fixável por env).
+    env_tipos = os.getenv("BASILEIA_TIPOS", "").strip()
+    tipos = ([int(x) for x in env_tipos.split(",")] if env_tipos
+             else [tipo, 1, 3, 4, 5])
+    # dedup preservando ordem
+    tipos = list(dict.fromkeys(tipos))
 
     # catálogo de relatórios (debug) — número + nome de cada relatório disponível
     if debug:
@@ -170,19 +183,22 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
     for ai, anomes in enumerate(_candidate_anomes()[:3]):   # 3 trimestres mais recentes
         registros = None
         for rel in relatorios:
-            regs = _valores(anomes, tipo, rel.strip())
-            if not regs:
-                continue
-            tem_bas = any("basileia" in str(r.get("NomeColuna", "")).lower()
-                          or "basileia" in str(r.get("DescricaoColuna", "")).lower()
-                          for r in regs)
-            if debug and ai == 0:      # panorama dos relatórios com dados
-                cols = sorted({str(r.get("NomeColuna")) for r in regs})
-                print(f"   [basileia] {anomes} tipo={tipo} rel={rel}: {len(regs)} regs | "
-                      f"basileia? {tem_bas} | 1as colunas: {cols[:6]}")
-            if tem_bas:
-                print(f"   [basileia] >>> ACHOU Basileia em {anomes} rel={rel}")
-                registros = regs
+            for tp in tipos:
+                regs = _valores(anomes, tp, rel.strip())
+                if not regs:
+                    continue
+                tem_bas = any("basileia" in str(r.get("NomeColuna", "")).lower()
+                              or "basileia" in str(r.get("DescricaoColuna", "")).lower()
+                              for r in regs)
+                if debug and ai == 0:
+                    cols = sorted({str(r.get("NomeColuna")) for r in regs})
+                    print(f"   [basileia] {anomes} tipo={tp} rel={rel}: {len(regs)} regs "
+                          f"| basileia? {tem_bas} | 1as colunas: {cols[:6]}")
+                if tem_bas:
+                    print(f"   [basileia] >>> ACHOU Basileia em {anomes} tipo={tp} rel={rel}")
+                    registros = regs
+                    break
+            if registros is not None:
                 break
         if not registros:
             continue
