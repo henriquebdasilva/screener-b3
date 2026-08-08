@@ -110,17 +110,38 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
 
     def _get(url):
         try:
-            r = requests.get(url, timeout=40)
+            r = requests.get(url, timeout=60)
             if r.status_code != 200:
                 if debug and _err_shown[0] < 3:
                     _err_shown[0] += 1
-                    print(f"   [basileia] HTTP {r.status_code}: {r.text[:200]}")
+                    print(f"   [basileia] HTTP {r.status_code}: {r.text[:160]}")
                 return None
             return r.json().get("value", [])
         except Exception as e:
             if debug:
                 print(f"   [basileia] erro: {e}")
             return None
+
+    # sondagem dedicada ao Relatório 5 (descobre TipoInstituicao/variação que responde 200)
+    if debug:
+        for am in _candidate_anomes()[:2]:
+            for tp in (1, 2, 3, 4):
+                for label, extra in (("plain", ""),
+                                     ("top", "&$top=30000")):
+                    u = (f"{BASE}/IfDataValores(AnoMes=@AnoMes,TipoInstituicao="
+                         f"@TipoInstituicao,Relatorio=@Relatorio)?@AnoMes={am}"
+                         f"&@TipoInstituicao={tp}&@Relatorio='5'{extra}&$format=json")
+                    try:
+                        r = requests.get(u, timeout=60)
+                        n = len(r.json().get("value", [])) if r.status_code == 200 else 0
+                        bas = False
+                        if n:
+                            bas = any("basileia" in str(x.get("NomeColuna", "")).lower()
+                                      for x in r.json()["value"])
+                        print(f"   [basileia][probe5] {am} tipo={tp} {label}: "
+                              f"HTTP {r.status_code} regs={n} basileia={bas}")
+                    except Exception as e:
+                        print(f"   [basileia][probe5] {am} tipo={tp} {label}: ERRO {e}")
 
     def _cadastro(anomes):
         """CodInst -> NomeInstituicao (para casar tickers por nome)."""
@@ -131,11 +152,9 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
 
     def _valores(anomes, tipo=2, rel=5):
         # Relatório 5 = "Informações de Capital" (Índice de Basileia). Relatorio é TEXTO.
-        # $select reduz o payload (o relatório é grande e o Olinda às vezes dá 500).
-        sel = "CodInst,NomeColuna,DescricaoColuna,Saldo"
         url = (f"{BASE}/IfDataValores(AnoMes=@AnoMes,TipoInstituicao=@TipoInstituicao,"
                f"Relatorio=@Relatorio)?@AnoMes={anomes}&@TipoInstituicao={tipo}"
-               f"&@Relatorio='{rel}'&$select={sel}&$format=json")
+               f"&@Relatorio='{rel}'&$format=json")
         for _ in range(2):                 # 1 retry em caso de 500 transitório
             v = _get(url)
             if v:
