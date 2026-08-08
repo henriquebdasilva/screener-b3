@@ -144,23 +144,30 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
 
     # catálogo de relatórios (debug) — número + nome de cada relatório disponível
     if debug:
+        # 1) $metadata: assinatura EXATA das funções (para de adivinhar parâmetros)
+        try:
+            md = requests.get(f"{BASE}/$metadata", timeout=40).text
+            for alvo in ("ListaDeRelatorio", "IfDataValores", "TipoInstituicao"):
+                i = md.find(alvo)
+                if i >= 0:
+                    print(f"   [basileia][meta] …{md[max(0,i-40):i+320]}…")
+        except Exception as e:
+            print(f"   [basileia][meta] erro: {e}")
+        # 2) tenta ListaDeRelatorio em algumas formas
         am0 = _candidate_anomes()[1]
         for probe in (
-            f"{BASE}/ListaDeRelatorio(AnoMes=@AnoMes,TipoInstituicao=@TipoInstituicao)"
-            f"?@AnoMes={am0}&@TipoInstituicao={tipo}&$format=json",
-            f"{BASE}/ListaDeRelatorio(AnoMes=@AnoMes)?@AnoMes={am0}&$format=json",
+            f"{BASE}/ListaDeRelatorio()?$format=json",
+            f"{BASE}/ListaDeRelatorio(TipoInstituicao=@T)?@T={tipo}&$format=json",
+            f"{BASE}/ListaDeRelatorio(AnoMes=@A,TipoInstituicao=@T)?@A={am0}&@T={tipo}"
+            f"&$format=json",
         ):
             got = _get(probe)
             if got:
                 for it in got:
-                    n = (it.get("Relatorio") or it.get("NumeroRelatorio")
-                         or it.get("Numero") or it.get("Codigo"))
-                    nm = (it.get("NomeRelatorio") or it.get("Nome")
-                          or it.get("Descricao"))
-                    print(f"   [basileia][catalogo] rel={n} :: {nm}")
+                    print(f"   [basileia][catalogo] {it}")
                 break
 
-    for anomes in _candidate_anomes()[:3]:      # 3 trimestres mais recentes
+    for ai, anomes in enumerate(_candidate_anomes()[:3]):   # 3 trimestres mais recentes
         registros = None
         for rel in relatorios:
             regs = _valores(anomes, tipo, rel.strip())
@@ -169,10 +176,12 @@ def fetch_basileia_map(tickers, debug: bool = None) -> dict:
             tem_bas = any("basileia" in str(r.get("NomeColuna", "")).lower()
                           or "basileia" in str(r.get("DescricaoColuna", "")).lower()
                           for r in regs)
-            if debug and tem_bas:
-                print(f"   [basileia] >>> ACHOU Basileia em {anomes} rel={rel} "
-                      f"({len(regs)} regs)")
+            if debug and ai == 0:      # panorama dos relatórios com dados
+                cols = sorted({str(r.get("NomeColuna")) for r in regs})
+                print(f"   [basileia] {anomes} tipo={tipo} rel={rel}: {len(regs)} regs | "
+                      f"basileia? {tem_bas} | 1as colunas: {cols[:6]}")
             if tem_bas:
+                print(f"   [basileia] >>> ACHOU Basileia em {anomes} rel={rel}")
                 registros = regs
                 break
         if not registros:
