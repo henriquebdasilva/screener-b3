@@ -226,8 +226,13 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     fin_series = pd.Series({t: fin_map.get(t, False) for t in df.index})
     hard = pd.Series(True, index=df.index)
 
+    # exige cotação válida: sem preço (ticker fantasma/sem dados) não é selecionável
+    close_ok = pd.to_numeric(df.get("close"), errors="coerce") > 0
+    df["preco_ok"] = close_ok.fillna(False)
+    hard &= df["preco_ok"]
+
     if mktcap_filter:
-        hard &= (df["marketcap_ok"] != False)                  # noqa: E712 (mantém n/d)
+        hard &= (df["marketcap_ok"] == True)                   # noqa: E712 (NaN reprova)
 
     # Dív.Líq/EBITDA <= teto (alavancagem), exceto financeiras
     if max_leverage and max_leverage > 0:

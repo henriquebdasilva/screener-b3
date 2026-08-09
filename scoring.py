@@ -51,6 +51,10 @@ def build_dataframe(funds: list[Fundamentals], pl_min: float = 2.0,
     rows = []
     for f in funds:
         fin = f.is_financial()
+        # múltiplos <= 0 são dado inválido, não "barato" -> viram NaN (não entram no rank)
+        pvp_v = f.pvp if (pd.notna(f.pvp) and f.pvp > 0) else np.nan
+        ev_v = f.ev_ebitda if (pd.notna(f.ev_ebitda) and f.ev_ebitda > 0) else np.nan
+        pl_v = f.pl if (pd.notna(f.pl) and f.pl > 0) else np.nan
         # dado suspeito (erro de fonte): P/L irreal (não-financeira) ou DY médio impossível.
         # Neutraliza no SCORE (colunas *_s); o dado bruto continua p/ o teto (que tem guarda).
         dy_for = f.dy_medio if pd.notna(f.dy_medio) else f.dy
@@ -73,7 +77,10 @@ def build_dataframe(funds: list[Fundamentals], pl_min: float = 2.0,
             "ticker": f.ticker, "setor": f.setor, "financeira": fin,
             "pl": f.pl, "pvp": f.pvp, "dy": f.dy,
             "dy_div": dy_for,                       # bruto (teto/exibição)
-            "pl_s": np.nan if pl_susp else f.pl,    # p/ ranking Value (neutralizado)
+            # ranking Value: múltiplos <= 0 são dado inválido (não é "barato") -> NaN
+            "pl_s": np.nan if pl_susp else pl_v,
+            "pvp_s": pvp_v,
+            "ev_ebitda_s": np.nan if fin else ev_v,
             "dy_div_s": np.nan if dy_susp else dy_for,  # p/ ranking Dividend (neutralizado)
             "dado_suspeito": "; ".join(motivos),
             "roe": f.roe, "roic": f.roic, "mrg_liq": f.mrg_liq,
@@ -101,10 +108,10 @@ def score_universe(funds: list[Fundamentals], pl_min: float = 2.0,
         "mrg_liq": _rank_score(df["mrg_liq"], True),
     }
     nv = {
-        "pl": _rank_score(df["pl_s"], False),        # P/L neutralizado se suspeito
-        "pvp": _rank_score(df["pvp"], False),
+        "pl": _rank_score(df["pl_s"], False),        # P/L neutralizado se suspeito/inválido
+        "pvp": _rank_score(df["pvp_s"], False),      # P/VP <= 0 (inválido) fora do ranking
         "peg": _rank_score(df["peg"], False),
-        "ev_ebitda": _rank_score(df["ev_ebitda"], False),
+        "ev_ebitda": _rank_score(df["ev_ebitda_s"], False),
     }
     ns = {
         "div_liq_ebitda": _rank_score(df["div_liq_ebitda"], False),
