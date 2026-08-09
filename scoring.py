@@ -46,20 +46,36 @@ def _wmean(vals: dict[str, float], weights: dict[str, float]) -> float:
     return num / den if den > 0 else np.nan
 
 
-def build_dataframe(funds: list[Fundamentals]) -> pd.DataFrame:
+def build_dataframe(funds: list[Fundamentals], pl_min: float = 2.0,
+                    dy_max: float = 20.0) -> pd.DataFrame:
     rows = []
     for f in funds:
-        # crescimento p/ o PEG: sustentável (ROE×(1−payout)); fallback = CAGR de receita
-        dy_for = f.dy_medio if pd.notna(f.dy_medio) else f.dy
-        g_est = sustainable_growth(f.roe, dy_for, f.pl)
-        growth_peg = g_est if (g_est is not None and g_est > 0) else f.cresc_5a
-        peg = (f.pl / growth_peg) if (pd.notna(f.pl) and pd.notna(growth_peg)
-                                      and growth_peg > 0) else np.nan
         fin = f.is_financial()
+        # dado suspeito (erro de fonte): P/L irreal (não-financeira) ou DY médio impossível.
+        # Neutraliza no SCORE (colunas *_s); o dado bruto continua p/ o teto (que tem guarda).
+        dy_for = f.dy_medio if pd.notna(f.dy_medio) else f.dy
+        pl_susp = (not fin) and pd.notna(f.pl) and f.pl < pl_min
+        dy_susp = pd.notna(dy_for) and dy_for >= dy_max
+        motivos = []
+        if pl_susp:
+            motivos.append(f"P/L={f.pl:.2f}<{pl_min:g}")
+        if dy_susp:
+            motivos.append(f"DY5a={dy_for:.1f}%>={dy_max:g}")
+
+        # crescimento p/ o PEG: sustentável (ROE×(1−payout)); fallback = CAGR de receita.
+        # se P/L suspeito, não usa (fica com cresc_5a) e o PEG sai do Value.
+        dy_growth = np.nan if dy_susp else dy_for
+        g_est = None if pl_susp else sustainable_growth(f.roe, dy_growth, f.pl)
+        growth_peg = g_est if (g_est is not None and g_est > 0) else f.cresc_5a
+        peg = (f.pl / growth_peg) if (not pl_susp and pd.notna(f.pl)
+                                      and pd.notna(growth_peg) and growth_peg > 0) else np.nan
         rows.append({
             "ticker": f.ticker, "setor": f.setor, "financeira": fin,
             "pl": f.pl, "pvp": f.pvp, "dy": f.dy,
-            "dy_div": dy_for,                       # DY usado no score de dividendo (médio)
+            "dy_div": dy_for,                       # bruto (teto/exibição)
+            "pl_s": np.nan if pl_susp else f.pl,    # p/ ranking Value (neutralizado)
+            "dy_div_s": np.nan if dy_susp else dy_for,  # p/ ranking Dividend (neutralizado)
+            "dado_suspeito": "; ".join(motivos),
             "roe": f.roe, "roic": f.roic, "mrg_liq": f.mrg_liq,
             "ev_ebitda": np.nan if fin else f.ev_ebitda,
             "div_liq_ebitda": np.nan if fin else f.div_liq_ebitda,
@@ -72,8 +88,9 @@ def build_dataframe(funds: list[Fundamentals]) -> pd.DataFrame:
     return pd.DataFrame(rows).set_index("ticker")
 
 
-def score_universe(funds: list[Fundamentals]) -> pd.DataFrame:
-    df = build_dataframe(funds)
+def score_universe(funds: list[Fundamentals], pl_min: float = 2.0,
+                   dy_max: float = 20.0) -> pd.DataFrame:
+    df = build_dataframe(funds, pl_min=pl_min, dy_max=dy_max)
     if df.empty:
         return df
 
@@ -84,7 +101,7 @@ def score_universe(funds: list[Fundamentals]) -> pd.DataFrame:
         "mrg_liq": _rank_score(df["mrg_liq"], True),
     }
     nv = {
-        "pl": _rank_score(df["pl"], False),
+        "pl": _rank_score(df["pl_s"], False),        # P/L neutralizado se suspeito
         "pvp": _rank_score(df["pvp"], False),
         "peg": _rank_score(df["peg"], False),
         "ev_ebitda": _rank_score(df["ev_ebitda"], False),
@@ -94,7 +111,7 @@ def score_universe(funds: list[Fundamentals]) -> pd.DataFrame:
         "liq_corr": _rank_score(df["liq_corr"], True),
         "div_patrim": _rank_score(df["div_patrim"], False),
     }
-    nd = _rank_score(df["dy_div"], True)
+    nd = _rank_score(df["dy_div_s"], True)           # DY neutralizado se suspeito
 
     def block_mean(dct: dict[str, pd.Series]) -> pd.Series:
         return pd.concat(dct.values(), axis=1).mean(axis=1, skipna=True)
@@ -130,9 +147,9 @@ SECTOR_CYCLICALITY = {
     "basic materials": 1.0, "materiais basicos": 1.0, "materiais": 1.0, "mineracao": 1.0,
     "siderurgia": 1.0, "papel": 0.9, "quimic": 0.9,
     "energy": 0.9, "energia": 0.9, "petroleo": 0.9, "oil": 0.9, "gas": 0.9,
-    "consumer cyclical": 0.8, "consumo ciclico": 0.8, "consumo discricionario": 0.8,
-    "discricionar": 0.8, "varejo": 0.9, "vestuario": 0.9, "auto": 0.8, "viagens": 0.8,
-    "turismo": 0.8,
+    "consumer cyclical": 0.9, "consumo ciclico": 0.9, "consumo discricionario": 0.9,
+    "discricionar": 0.9, "varejo": 0.8, "vestuario": 0.9, "auto": 0.9, "viagens": 0.9,
+    "turismo": 0.9,
     "real estate": 0.8, "imobiliar": 0.8, "construc": 0.85, "incorporac": 0.85,
     "industrials": 0.7, "industrial": 0.7, "industriais": 0.7, "bens industriais": 0.7,
     "transporte": 0.7, "aere": 0.95, "airlines": 0.95,

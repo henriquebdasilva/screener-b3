@@ -97,8 +97,10 @@ yfinance).
 
 Em seguida, as listas de **BOVA11** e **SMALL11** aparecem **separadas**, cada uma com os
 **30% melhores** por Investment Score dentro do próprio grupo (flags `--group-top`, default
-0,30, e `--no-split` para voltar ao corte único por `--top-quantile`). Depois vêm os
-preços-teto, a agenda e as teses. O app **anexa a planilha `.xlsx`** (aba *Selecionados* +
+0,30, e `--no-split` para voltar ao corte único por `--top-quantile`). Depois há uma seção
+**Defensivas · não-cíclicas** — recorte das selecionadas (BOVA11 + SMALL11 juntas) com
+**ciclicidade ≤ `--defensive-max-cyc`** (default 0,4: utilities, saneamento, saúde, consumo
+básico, telecom, financeiro). Por fim vêm os preços-teto, a agenda e as teses. O app **anexa a planilha `.xlsx`** (aba *Selecionados* +
 aba *Universo*) e o CSV. O envio só ocorre se as credenciais estiverem configuradas — senão,
 é pulado e os relatórios continuam em `reports/`.
 
@@ -262,6 +264,19 @@ mostra quantos entraram; flag `--teto-outlier-mult`, 0 desliga). Em **bancos, se
 holdings**, Graham (subestima) e Lynch (infla) ficam **fora do consolidado** — sobram
 Bazin, Gordon e DCF (os métodos individuais seguem visíveis na tabela). Estimativas
 sensíveis às premissas — não são gatilho.
+
+**Neutralização de dado suspeito no score.** Valores de fonte claramente errados poluem o
+Value/Dividend. Por isso, **P/L de não-financeira abaixo de `--suspect-pl-min`** (default 2,0)
+sai do bloco Value (e do PEG) daquele papel, e **DY médio de 5 anos ≥ `--suspect-dy-max`**
+(default 20%) sai do bloco Dividend. O dado bruto continua visível e ainda alimenta o teto
+(que tem seu próprio guarda). Financeiras são poupadas do corte de P/L (bancos têm P/L
+estruturalmente baixo). Coluna `dado_suspeito` registra o motivo.
+
+**Confiabilidade do teto.** Se os métodos discordam demais entre si (dispersão máx/mín >
+`--teto-disp-max`, default 8×) ou o upside fica implausível (> `--teto-max-upside`, default
+200%) — típico de dado ruim na fonte (P/L irreal) ou histórico curto de dividendos —, o teto
+consolidado é marcado **não confiável** e vira `n/d` ("—"), em vez de exibir um número
+distorcido. Colunas `teto_confiavel`/`teto_dispersao`.
 
 Novas flags: `--strict-criteria`, `--no-mktcap-filter`. Novos envs opcionais: `SELIC`
 (ex.: `15`), `INSIDER_CHECK` (`0` desliga).

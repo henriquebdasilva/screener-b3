@@ -36,7 +36,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
         max_net_debt_equity=1.5, split_by_origin=True, group_top=None,
-        use_basileia=True, cyclical_penalty=0.25, defensive_max_cyc=0.4):
+        use_basileia=True, cyclical_penalty=0.25, defensive_max_cyc=0.4,
+        teto_max_upside=200.0, teto_disp_max=8.0,
+        suspect_pl_min=2.0, suspect_dy_max=20.0):
 
     tickers = get_universe(universe)
     ishares_setores = get_ishares_sectors()      # {ticker: setor GICS oficial}
@@ -90,7 +92,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         if use_avg_dy and pd.notna(avg_dy.get(f.ticker, float("nan"))):
             f.dy_medio = avg_dy[f.ticker]
 
-    scores = score_universe(funds)
+    scores = score_universe(funds, pl_min=suspect_pl_min, dy_max=suspect_dy_max)
     if scores.empty:
         print("Sem dados fundamentalistas — abortando.")
         return None
@@ -138,12 +140,15 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                            if bazin_yield_pct > 0 else None),
                               safety_discount=teto_desconto_pct / 100.0,
                               outlier_mult=teto_outlier_mult,
-                              is_financial=fin_map.get(tk, False))
+                              is_financial=fin_map.get(tk, False),
+                              max_upside=teto_max_upside, raw_disp_max=teto_disp_max)
         ceil_rows[tk] = {"teto_bazin": cc.bazin, "teto_graham": cc.graham,
                          "teto_gordon": cc.gordon, "teto_dcf": cc.dcf,
                          "teto_lynch": cc.lynch, "teto_medio": cc.media,
                          "teto_mediana": cc.mediana, "teto_ajustado": cc.ajustado,
                          "teto_n_metodos": cc.n_metodos,
+                         "teto_confiavel": cc.confiavel, "teto_dispersao": round(cc.dispersao, 1)
+                         if pd.notna(cc.dispersao) else None,
                          "teto_upside_pct": cc.upside_pct,
                          "teto_upside_media_pct": cc.upside_media_pct,
                          "dy_teto": round(dy_ceil, 2) if pd.notna(dy_ceil) else None}
@@ -302,7 +307,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     cols = [
             "origem", "grupo", "setor", "investment", "investment_base", "consistencia",
-            "basileia", "solvencia", "ciclicidade",
+            "basileia", "solvencia", "ciclicidade", "dado_suspeito",
             "quality", "value", "safety", "dividend",
             "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
             "passa_checklist", "mais_5a_bolsa", "sem_prejuizo_anual", "lucro_20t",
@@ -315,7 +320,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "div_liq_ebitda",
             "liq_corr", "div_patrim", "peg", "close", "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_medio", "teto_mediana",
-            "teto_ajustado", "teto_n_metodos", "teto_upside_pct",
+            "teto_ajustado", "teto_n_metodos", "teto_confiavel", "teto_dispersao",
+            "teto_upside_pct",
             "teto_upside_media_pct", "prox_resultado",
             "ex_dividendo", "ex_tipo", "tese_ia", "strategy",
             "trend", "breakout_level", "pct_to_level", "dist_52w_high_pct",
@@ -453,6 +459,18 @@ def parse_args():
     p.add_argument("--defensive-max-cyc", type=float, default=0.4,
                    help="teto de ciclicidade p/ a seção 'Defensivas/não-cíclicas' no e-mail "
                         "(default 0.4)")
+    p.add_argument("--teto-max-upside", type=float, default=200.0,
+                   help="acima deste upside %% o teto é marcado não confiável -> n/d "
+                        "(default 200; 0 desliga)")
+    p.add_argument("--teto-disp-max", type=float, default=8.0,
+                   help="se os métodos discordarem mais que isso (max/min), teto vira n/d "
+                        "(default 8; 0 desliga)")
+    p.add_argument("--suspect-pl-min", type=float, default=2.0,
+                   help="P/L de não-financeira abaixo disso é dado suspeito -> sai do Value "
+                        "(default 2.0; 0 desliga)")
+    p.add_argument("--suspect-dy-max", type=float, default=20.0,
+                   help="DY médio (5a) acima/igual disso é suspeito -> sai do Dividend "
+                        "(default 20; 0 desliga)")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -490,4 +508,6 @@ if __name__ == "__main__":
         max_net_debt_equity=a.max_net_debt_equity,
         split_by_origin=not a.no_split, group_top=a.group_top,
         use_basileia=not a.no_basileia, cyclical_penalty=a.cyclical_penalty,
-        defensive_max_cyc=a.defensive_max_cyc)
+        defensive_max_cyc=a.defensive_max_cyc,
+        teto_max_upside=a.teto_max_upside, teto_disp_max=a.teto_disp_max,
+        suspect_pl_min=a.suspect_pl_min, suspect_dy_max=a.suspect_dy_max)
