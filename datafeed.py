@@ -378,3 +378,27 @@ def get_net_income_history(ticker: str):
     except Exception:
         pass
     return annual, quarterly
+
+
+def dividends_no_cut(px, years: int = 5, tol: float = 0.20):
+    """True se NÃO houve corte relevante de dividendo ano a ano nos últimos `years`.
+
+    Usa valores anuais pagos (não DY, p/ não sofrer efeito de preço). Um 'corte' conta
+    quando o pago no ano cai mais que `tol` (ex.: 20%) vs. o ano anterior — a tolerância
+    evita marcar variação normal (dividendo variável/JCP) como corte. None se histórico
+    insuficiente (< 3 anos com pagamento)."""
+    try:
+        if px is None or "Dividends" not in getattr(px, "columns", []):
+            return None
+        d = px["Dividends"].fillna(0.0)
+        yr = d.groupby(d.index.year).sum()
+        vals = list(yr.tail(years + 1).values)     # 1 ano a mais p/ comparar
+        while vals and vals[0] <= 0:               # remove zeros iniciais (pré-pagamento)
+            vals.pop(0)
+        if len([v for v in vals if v > 0]) < 3:
+            return None
+        cortes = sum(1 for i in range(1, len(vals))
+                     if vals[i - 1] > 0 and vals[i] < (1 - tol) * vals[i - 1])
+        return cortes == 0
+    except Exception:
+        return None

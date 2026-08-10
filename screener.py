@@ -60,12 +60,13 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         items = items[:limit]
 
     from datafeed import (get_selic, get_insider_sells, avg_annual_dy,
-                          listed_years, paid_dividends_ge, get_net_income_history)
+                          listed_years, paid_dividends_ge, get_net_income_history,
+                          dividends_no_cut)
     selic = get_selic()
     print(f"Universo: {len(items)} tickers ({universe}). Selic usada: {selic:.2f}%")
 
     funds, breaks, origem, mcap, insider, avg_dy = [], {}, {}, {}, {}, {}
-    listed_y, div_ge5, profit_hist = {}, {}, {}
+    listed_y, div_ge5, profit_hist, div_nocut = {}, {}, {}, {}
     for i, (tk, orig) in enumerate(items, 1):
         origem[tk] = "+".join(orig)
         try:
@@ -86,6 +87,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 avg_dy[tk] = avg_annual_dy(px, dy_years)
             listed_y[tk] = listed_years(px)
             div_ge5[tk] = paid_dividends_ge(px, 5, 5.0)
+            div_nocut[tk] = dividends_no_cut(px, 5, 0.20)
         except Exception as e:
             print(f"  [preço] {tk}: {e}")
         try:
@@ -218,7 +220,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     for tk in df.index:
         ni = profit_hist.get(tk, ([], []))
         cc2 = _consistency(df.loc[tk], listed_y.get(tk), div_ge5.get(tk),
-                           ni[0], ni[1], is_financial=fin_map.get(tk, False))
+                           ni[0], ni[1], is_financial=fin_map.get(tk, False),
+                           div_no_cut=div_nocut.get(tk))
         cons_rows[tk] = cc2.as_dict()
     df = df.join(pd.DataFrame(cons_rows).T.rename(columns={"score": "consistencia"}))
     df["investment_base"] = df["investment"]
@@ -341,7 +344,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "quality", "value", "safety", "dividend",
             "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
             "passa_checklist", "mais_5a_bolsa", "sem_prejuizo_anual", "lucro_20t",
-            "div_ge5_5a", "roe_ge_10", "divida_menor_patrim", "cresc_receita_5a",
+            "div_ge5_5a", "div_sem_corte", "roe_ge_10", "divida_menor_patrim", "cresc_receita_5a",
             "cresc_lucro_5a", "n_ok", "n_aplic",
             "roe_roic_ge_selic", "roe_ge_setor", "roic_ge_setor",
             "margem_ge_15", "cagr_ge_setor", "divida_ok", "marketcap_ok", "insider_ok",

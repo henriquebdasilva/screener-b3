@@ -237,7 +237,7 @@ CAGR de receita**. Alimenta Gordon/DCF/Lynch e o PEG.
 avaliados e a fração atendida (0–100) é **misturada ao Investment Score** (peso
 `--consistency-weight`, default 0,15; coluna `consistencia` e `Consist.` no e-mail):
 +5 anos de Bolsa, nunca deu prejuízo (anos disponíveis), lucro nos últimos 20 trimestres,
-dividendo ≥ 5%/ano nos últimos 5 anos, ROE > 10%, dívida < patrimônio (n/a p/ financeira),
+dividendo ≥ 5%/ano nos últimos 5 anos, **dividendos sem corte** (sem queda > 20% ano a ano em 5 anos), ROE > 10%, dívida < patrimônio (n/a p/ financeira),
 crescimento de receita 5a e crescimento de lucro 5a. Cada critério vira `n/d` quando falta
 dado e **não pesa**. Ressalva honesta: os três ligados a **histórico de lucro** (nunca deu
 prejuízo, 20 trimestres, crescimento de lucro) dependem do yfinance, cuja cobertura para a

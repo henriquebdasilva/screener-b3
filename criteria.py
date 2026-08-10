@@ -139,6 +139,7 @@ class Consistency:
     sem_prejuizo_anual: object = None      # nos anos disponíveis (best-effort)
     lucro_20t: object = None               # 20 trimestres (n/d se dados insuficientes)
     div_ge5_5a: object = None              # DY >= 5% em todos os últimos 5 anos
+    div_sem_corte: object = None           # sem corte relevante de dividendo em 5 anos
     roe_ge_10: object = None
     divida_menor_patrim: object = None     # Dív/Patrim < 1 (n/a p/ financeira)
     cresc_receita_5a: object = None
@@ -152,11 +153,12 @@ class Consistency:
 
 
 def consistency(row, listed_y, div_ge5, ni_annual, ni_quarterly,
-                is_financial: bool = False) -> Consistency:
+                is_financial: bool = False, div_no_cut=None) -> Consistency:
     c = Consistency()
     ly = _num(listed_y)
     c.mais_5a_bolsa = None if ly is None else bool(ly >= 5)
     c.div_ge5_5a = div_ge5 if isinstance(div_ge5, bool) else None
+    c.div_sem_corte = div_no_cut if isinstance(div_no_cut, bool) else None
 
     roe = _num(row.get("roe"))
     c.roe_ge_10 = None if roe is None else bool(roe >= 10.0)
@@ -178,7 +180,8 @@ def consistency(row, listed_y, div_ge5, ni_annual, ni_quarterly,
         c.lucro_20t = bool(all(x > 0 for x in ni_quarterly[:20]))
 
     flags = [c.mais_5a_bolsa, c.sem_prejuizo_anual, c.lucro_20t, c.div_ge5_5a,
-             c.roe_ge_10, c.divida_menor_patrim, c.cresc_receita_5a, c.cresc_lucro_5a]
+             c.div_sem_corte, c.roe_ge_10, c.divida_menor_patrim,
+             c.cresc_receita_5a, c.cresc_lucro_5a]
     ap = [f for f in flags if f is not None]
     c.n_aplic = len(ap)
     c.n_ok = sum(1 for f in ap if f)
