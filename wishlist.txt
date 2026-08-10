@@ -1,5 +1,6 @@
 # Wishlist — um ticker por linha. '#' inicia comentário; linhas vazias são ignoradas.
 # Estes papéis aparecem SEMPRE no e-mail (com dados, preços-teto e IA), mesmo reprovados.
 # Exemplos (troque pelos seus):
-# RENT3
+# WEGE3
 # TOTS3
+# EGIE3
