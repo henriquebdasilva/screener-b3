@@ -1,4 +1,4 @@
-# Screener B3 — 2026-08-09
+# Screener B3 — 2026-08-10
 
 *Parâmetros:* `{'universe': 'both', 'top_quantile': 0.5, 'min_invest': None, 'lookback': 20, 'vol_mult': 1.5, 'require_contraction': False}`
 
@@ -28,7 +28,7 @@
 | INTB3    | SMALL11        | Tecnologia de informação     |        68.42 |     72.63 |   53.23 |    75.74 |      46.53 | Não             | Lateral  |   14.72 |      -2.70985  |
 | VLID3    | SMALL11        | Bens Industriais             |        68.09 |     64.63 |   75.49 |    65.79 |      72.22 | Não             | Lateral  |   17.03 |      -8.73526  |
 | PETR3    | BOVA11         | Energia                      |        68.03 |     86.31 |   81.38 |    24.5  |     nan    | Não             | Em Alta  |   45.69 |      -6.1807   |
-| ISAE4    | BOVA11         | Serviços públicos            |        67.72 |     61.21 |   55.34 |    79.78 |      76.39 | Não             | Em Baixa |   26.27 |      -7.92149  |
+| ISAE4    | BOVA11         | Serviços públicos            |        67.67 |     61.21 |   55.34 |    79.78 |      75.69 | Não             | Em Baixa |   26.27 |      -7.92149  |
 | LREN3    | BOVA11+SMALL11 | Consumo discricionário       |        67.09 |     69.77 |   67.86 |    55.01 |      48.61 | Não             | Em Baixa |   12.39 |     -10.8633   |
 | VIVA3    | BOVA11+SMALL11 | Consumo discricionário       |        66.4  |     76.52 |   53.05 |    69.86 |      17.36 | Não             | Em Baixa |   21.63 |      -7.36617  |
 | ABCB4    | SMALL11        | Produtos financeiros         |        65.41 |     53.24 |   68.97 |    83.86 |      84.03 | Não             | Em Baixa |   23.53 |      -2.60761  |
