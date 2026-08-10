@@ -1,6 +1,8 @@
 # Carteira — um ticker por linha. Opcional: preço médio após o ticker (espaço ou vírgula).
 # '#' inicia comentário. Estes papéis aparecem SEMPRE (dados, teto, IA) + variação vs preço médio.
 # Exemplos (troque pelos seus):
-# ITSA4  9.50
-# BBSE3, 34.20
+BBAS3 22.29
+IRBR3, 57.62
+AXIA3, 59.55
+WEGE3, 49.82
 # TAEE11            # sem preço médio -> mostra só os dados/teto/IA
