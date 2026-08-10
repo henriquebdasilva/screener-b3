@@ -290,13 +290,63 @@ def _defensivas_section(df: pd.DataFrame, thr: float) -> str:
             f'<table>{_main_head()}{rows}</table>')
 
 
+def _posicao_table(df: pd.DataFrame) -> str:
+    """Mini-tabela de posição da carteira: preço médio, atual e variação."""
+    linhas = []
+    for tk, r in df.iterrows():
+        pm = r.get("preco_medio")
+        if pd.isna(pm) if hasattr(pd, "isna") else (pm is None):
+            continue
+        close = r.get("close")
+        var = r.get("var_pm_pct")
+        var_s = "—" if pd.isna(var) else f"{float(var):+.1f}%"
+        cor = "#16a34a" if (pd.notna(var) and var >= 0) else "#dc2626"
+        linhas.append(
+            f"<tr><td><b>{tk}</b></td><td>{float(pm):.2f}</td>"
+            f"<td>{'' if pd.isna(close) else f'{float(close):.2f}'}</td>"
+            f"<td style='color:{cor}'>{var_s}</td></tr>")
+    if not linhas:
+        return ""
+    head = ("<tr><th>Ativo</th><th>Preço médio</th><th>Preço atual</th>"
+            "<th>Variação</th></tr>")
+    return (f'<h3 style="{_H3}">Posição</h3><table>{head}{"".join(linhas)}</table>')
+
+
+def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False) -> str:
+    if df is None or df.empty:
+        return (f'<h2 style="{_H2}">{title}</h2>'
+                f'<p class="empty">Nenhum papel — crie/edite o arquivo .txt correspondente.</p>')
+    parts = [f'<h2 style="{_H2}">{title} — {len(df)} papéis</h2>',
+             f'<p class="sub" style="margin:0 0 8px">{sub}</p>']
+    if posicao:
+        parts.append(_posicao_table(df))
+    parts.append(f'<table>{_main_head()}{"".join(_fmt_row(r) for _, r in df.iterrows())}</table>')
+    parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
+    if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
+        parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
+    parts.append(_teses_block(df))          # IA para todos deste bloco
+    return "".join(parts)
+
+
 def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                market: dict = None, mood: dict = None, group_pct: int = None,
-               defensive_cyc: float = 0.4) -> str:
+               defensive_cyc: float = 0.4, wishlist_df: pd.DataFrame = None,
+               carteira_df: pd.DataFrame = None) -> str:
     topo = _market_block(market) + _mood_block(mood)
     suf = f" ({group_pct}% de maior score)" if group_pct else ""
+    watch = ""
+    if carteira_df is not None and not carteira_df.empty:
+        watch += _watch_block(carteira_df, "Minha carteira",
+                              "Todos os papéis da sua carteira (arquivo carteira.txt), com "
+                              "dados, preços-teto e análise por IA — independentemente dos "
+                              "filtros.", posicao=True)
+    if wishlist_df is not None and not wishlist_df.empty:
+        watch += _watch_block(wishlist_df, "Wishlist",
+                             "Papéis que você quer acompanhar (arquivo wishlist.txt), com "
+                             "dados, preços-teto e análise por IA — mesmo reprovados no corte.")
     if selecionados is None or selecionados.empty:
-        body = topo + '<p class="empty">Nenhum papel passou no corte fundamentalista hoje.</p>'
+        body = topo + \
+            '<p class="empty">Nenhum papel passou no corte fundamentalista hoje.</p>' + watch
         n_graf = 0
     else:
         og = selecionados["oportunidade_grafica"] if "oportunidade_grafica" \
@@ -309,7 +359,6 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                 lambda o: "BOVA11" if "BOVA11" in o else "SMALL11")
         bova = selecionados[grp == "BOVA11"]
         small = selecionados[grp == "SMALL11"]
-        # recorte de não-cíclicas (defensivas), BOVA11 + SMALL11 juntas
         if "ciclicidade" in selecionados.columns:
             cyc = pd.to_numeric(selecionados["ciclicidade"], errors="coerce")
             defensivas = selecionados[cyc <= defensive_cyc].sort_values(
@@ -323,6 +372,7 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
             + _defensivas_section(defensivas, defensive_cyc)
             + f'<p class="sub" style="margin:14px 0 0">{_TETO_NOTE}</p>'
             + _teses_block(selecionados)
+            + watch                          # Carteira e Wishlist ao final
         )
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{_CSS}</style></head>
 <body><div class="card">

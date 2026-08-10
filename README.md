@@ -88,6 +88,14 @@ do rompimento, rode com `--no-volume --no-trend --breakout-consol-pct 15 --break
 
 ## E-mail (relatório + planilha anexa)
 
+**Wishlist & Carteira (arquivos `.txt`).** Crie `wishlist.txt` e/ou `carteira.txt` (um ticker
+por linha; `#` comenta; na carteira, opcionalmente o **preço médio** após o ticker). Esses
+papéis são **sempre varridos e exibidos** no e-mail — com todos os dados, preços-teto e
+**análise por IA** —, mesmo que reprovem no corte ou não estejam no BOVA11/SMALL11. A carteira
+ainda mostra a **variação vs. preço médio**. Caminhos configuráveis por env `WISHLIST_FILE` /
+`CARTEIRA_FILE`. Como a IA roda para todos esses papéis, respeite o teto `AI_MAX_CALLS`.
+
+
 O topo do e-mail traz um **Resumo de mercado** (Selic, e Ibovespa / Small Caps / IFIX no ano
 e no mês via yfinance — IFIX é best-effort) e um **Humor do mercado** (percentual dos papéis
 em alta/lateral/baixa pela MM21, por índice BOVA11/SMALL11 e por setor, usando todo o

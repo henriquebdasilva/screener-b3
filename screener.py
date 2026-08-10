@@ -41,6 +41,19 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         suspect_pl_min=2.0, suspect_dy_max=20.0):
 
     tickers = get_universe(universe)
+    from watchlist import get_wishlist, get_carteira
+    wl, cart = get_wishlist(), get_carteira()
+    for tk in wl:
+        tickers.setdefault(tk, [])
+        if "Wishlist" not in tickers[tk]:
+            tickers[tk].append("Wishlist")
+    for tk in cart:
+        tickers.setdefault(tk, [])
+        if "Carteira" not in tickers[tk]:
+            tickers[tk].append("Carteira")
+    if wl or cart:
+        print(f"Wishlist: {len(wl)} papel(is) | Carteira: {len(cart)} papel(is) "
+              f"(sempre exibidos, com IA).")
     ishares_setores = get_ishares_sectors()      # {ticker: setor GICS oficial}
     items = list(tickers.items())
     if limit:
@@ -286,15 +299,26 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         df["breakout"] & (strat.astype(str) != ""), strat.astype(str), "Não")
 
     hoje = dt.date.today().isoformat()
-    # ---- enriquecimento: agenda (selecionados) + tese IA (aprovados) ----
+    # marca wishlist/carteira (sempre exibidos) e a posição da carteira
+    df["in_wishlist"] = df.index.isin(wl)
+    df["in_carteira"] = df.index.isin(cart)
+    df["preco_medio"] = [cart.get(t) for t in df.index]
+    df["var_pm_pct"] = [
+        ((df.at[t, "close"] / cart[t] - 1) * 100.0)
+        if (t in cart and cart.get(t) and pd.notna(df.at[t, "close"]) and cart[t] > 0)
+        else float("nan") for t in df.index
+    ]
+
+    # ---- enriquecimento: agenda + tese IA ----
     df["prox_resultado"] = "n/d"
     df["ex_dividendo"] = "n/d"
     df["ex_tipo"] = ""
     df["tese_ia"] = ""
     if enrich:
         from enrich import get_events, generate_theses
-        sel_idx = list(df.index[df["fund_ok"]])
-        for tk in sel_idx:
+        # agenda: selecionados + wishlist + carteira
+        ag_idx = list(df.index[df["fund_ok"] | df["in_wishlist"] | df["in_carteira"]])
+        for tk in ag_idx:
             try:
                 ev = get_events(tk)
                 df.at[tk, "prox_resultado"] = ev.get("prox_resultado") or "n/d"
@@ -303,8 +327,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             except Exception as e:
                 print(f"  [agenda] {tk}: {e}")
             time.sleep(0.2)
-        aprov = df[df["aprovado"]]
-        teses = generate_theses(aprov, hoje, outdir, force=force_ia)
+        # IA: aprovados + TODA a wishlist + TODA a carteira
+        ia_mask = df["aprovado"] | df["in_wishlist"] | df["in_carteira"]
+        teses = generate_theses(df[ia_mask], hoje, outdir, force=force_ia)
         for tk, txt in teses.items():
             df.at[tk, "tese_ia"] = txt
 
@@ -329,6 +354,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "teto_upside_pct",
             "teto_upside_media_pct", "prox_resultado",
             "ex_dividendo", "ex_tipo", "tese_ia", "strategy",
+            "in_wishlist", "in_carteira", "preco_medio", "var_pm_pct",
             "trend", "breakout_level", "pct_to_level", "dist_52w_high_pct",
             "fund_ok", "breakout", "aprovado", "note"]
     cols = [c for c in cols if c in df.columns]
@@ -365,7 +391,11 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                               market=resumo, mood=humor,
                               group_pct=(int(round(frac * 100)) if split_by_origin
                                          and min_invest is None else None),
-                              defensive_cyc=defensive_max_cyc)
+                              defensive_cyc=defensive_max_cyc,
+                              wishlist_df=full[full["in_wishlist"]].sort_values(
+                                  "investment", ascending=False),
+                              carteira_df=full[full["in_carteira"]].sort_values(
+                                  "investment", ascending=False))
             n_graf = int((selecionados["oportunidade_grafica"] != "Não").sum()) \
                 if len(selecionados) else 0
             subject = (f"[Screener B3] {len(selecionados)} papéis nos critérios "
