@@ -189,13 +189,19 @@ def _local_minima(series: pd.Series, order: int = 5) -> list:
     return out
 
 
-def detect_double_bottom(df, lookback: int = 120, tol: float = 0.04,
-                         min_sep: int = 10, neckline_min: float = 0.08, order: int = 5):
-    """Fundo duplo (W): dois fundos parecidos (±tol), separados por ≥min_sep pregões, com um
-    pico intermediário ≥neckline_min acima; CONFIRMA quando o preço rompe o pico."""
+def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
+                         min_sep: int = 10, neckline_min: float = 0.08,
+                         drop_min: float = 0.20, order: int = 5):
+    """Fundo duplo (W) — padrão de REVERSÃO. Exige:
+      • tendência de BAIXA antes do padrão (is_uptrend do trecho anterior aos fundos) e
+        queda ≥ drop_min de um topo prévio até os fundos;
+      • dois fundos alinhados (≤ tol entre eles) e separados por ≥ min_sep pregões;
+      • pico intermediário (pescoço) ≥ neckline_min acima dos fundos;
+      • CONFIRMA quando o preço rompe o pescoço."""
     close = df["Close"].iloc[-lookback:]
     if len(close) < 40:
         return None
+    offset = len(df) - len(close)
     mins = _local_minima(close, order)
     if len(mins) < 2:
         return None
@@ -206,24 +212,29 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.04,
             if i2 - i1 < min_sep:
                 continue
             p1, p2 = float(close.iloc[i1]), float(close.iloc[i2])
-            if abs(p1 - p2) / min(p1, p2) > tol:
+            if abs(p1 - p2) / min(p1, p2) > tol:          # fundos alinhados (≤2%)
                 continue
             peak = float(close.iloc[i1:i2 + 1].max())
             base = min(p1, p2)
-            if peak / base - 1 < neckline_min:
+            if peak / base - 1 < neckline_min:            # pescoço ~8% acima
                 continue
-            if cur > peak and float(close.iloc[i2:].min()) >= base * (1 - tol):
-                return {"neckline": peak, "base": base}
+            if not (cur > peak and float(close.iloc[i2:].min()) >= base * (1 - tol)):
+                continue                                   # confirma rompimento do pescoço
+            if not _reversal_context(df, offset + i1, base, lookback, drop_min):
+                continue                                   # exige baixa + queda ≥20% antes
+            return {"neckline": peak, "base": base}
     return None
 
 
-def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.04,
-                         min_sep: int = 8, neckline_min: float = 0.08, order: int = 5):
-    """Fundo triplo: três fundos parecidos (±tol) com picos entre eles; CONFIRMA no
-    rompimento da resistência (maior pico)."""
+def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.02,
+                         min_sep: int = 8, neckline_min: float = 0.08,
+                         drop_min: float = 0.20, order: int = 5):
+    """Fundo triplo — reversão. Três fundos alinhados (≤tol) com picos entre eles, após
+    tendência de baixa + queda ≥drop_min; CONFIRMA no rompimento da resistência."""
     close = df["Close"].iloc[-lookback:]
     if len(close) < 60:
         return None
+    offset = len(df) - len(close)
     mins = _local_minima(close, order)
     if len(mins) < 3:
         return None
@@ -233,14 +244,30 @@ def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.04,
         return None
     ps = [float(close.iloc[i]) for i in (i1, i2, i3)]
     base = min(ps)
-    if (max(ps) - base) / base > tol:
+    if (max(ps) - base) / base > tol:                     # três fundos alinhados (≤2%)
         return None
     resist = float(close.iloc[i1:i3 + 1].max())
     if resist / base - 1 < neckline_min:
         return None
-    if cur > resist:
-        return {"neckline": resist, "base": base}
-    return None
+    if cur <= resist:
+        return None
+    if not _reversal_context(df, offset + i1, base, lookback, drop_min):
+        return None
+    return {"neckline": resist, "base": base}
+
+
+def _reversal_context(df, abs_i1: int, base: float, lookback: int,
+                      drop_min: float) -> bool:
+    """True se, ANTES do padrão (até o 1º fundo), havia tendência de baixa E um topo prévio
+    ≥ (1+drop_min) acima dos fundos (queda relevante que o padrão vem reverter)."""
+    pre = df.iloc[:abs_i1]
+    if len(pre) < 30:
+        return False
+    if is_uptrend(pre) != EM_BAIXA_STR:                   # nosso padrão de tendência (MM21)
+        return False
+    ini = max(0, abs_i1 - lookback)
+    prior_peak = float(df["Close"].iloc[ini:abs_i1].max())
+    return prior_peak >= base * (1 + drop_min)            # queda ≥ drop_min do topo aos fundos
 
 
 def detect_bull_flag(df, pole_win: int = 20, pole_min: float = 0.18,
