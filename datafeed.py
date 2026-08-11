@@ -34,7 +34,8 @@ class Fundamentals:
     mrg_liq: float = math.nan       # Margem líquida (%)
     ev_ebitda: float = math.nan     # EV/EBITDA
     div_liq_ebitda: float = math.nan  # Dívida líquida/EBITDA
-    div_patrim: float = math.nan    # Dívida/Patrimônio
+    div_patrim: float = math.nan    # Dívida bruta/Patrimônio (fundamentus)
+    div_liq_patrim: float = math.nan  # Dívida líquida/Patrimônio (derivada do yfinance)
     liq_corr: float = math.nan      # Liquidez corrente
     cresc_5a: float = math.nan      # Crescimento receita 5a (%) -> proxy p/ PEG
     market_cap: float = math.nan    # Valor de mercado (R$)
@@ -160,6 +161,15 @@ def _from_yfinance(ticker: str) -> Fundamentals:
     eg = g("earningsGrowth", "revenueGrowth")
     f.cresc_5a = eg * 100 if pd.notna(eg) else math.nan
     f.market_cap = g("marketCap")
+    # Dívida líquida a partir do balanço (yfinance): (dívida total − caixa)
+    td, tc, eb = g("totalDebt"), g("totalCash"), g("ebitda")
+    if pd.notna(td) and pd.notna(eb) and eb > 0:
+        nd = td - (tc if pd.notna(tc) else 0.0)
+        f.div_liq_ebitda = nd / eb
+        if pd.notna(f.market_cap) and f.market_cap > 0 and pd.notna(f.pvp) and f.pvp > 0:
+            equity = f.market_cap / f.pvp          # P/VP = market cap / patrimônio
+            if equity > 0:
+                f.div_liq_patrim = nd / equity
     f.setor = str(info.get("sector") or info.get("industry") or "")
     return f
 
@@ -180,15 +190,15 @@ def get_fundamentals(ticker: str, sector_hint: str = "") -> Fundamentals:
     if f is None:
         f = _from_yfinance(ticker)
     else:
-        # completa buracos com yfinance
+        # completa buracos com yfinance (inclui dívida líquida, que o fundamentus não traz)
         yf_needed = any(pd.isna(getattr(f, a)) for a in
                         ("pl", "pvp", "dy", "roe", "ev_ebitda", "div_patrim",
-                         "liq_corr", "market_cap"))
+                         "liq_corr", "market_cap", "div_liq_ebitda", "div_liq_patrim"))
         if yf_needed:
             yf_f = _from_yfinance(ticker)
             for a in ("pl", "pvp", "dy", "roe", "roic", "mrg_liq", "ev_ebitda",
-                      "div_liq_ebitda", "div_patrim", "liq_corr", "cresc_5a",
-                      "market_cap"):
+                      "div_liq_ebitda", "div_liq_patrim", "div_patrim", "liq_corr",
+                      "cresc_5a", "market_cap"):
                 if pd.isna(getattr(f, a)) and pd.notna(getattr(yf_f, a)):
                     setattr(f, a, getattr(yf_f, a))
             if not f.setor and yf_f.setor:

@@ -267,12 +267,16 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     else:
         df["alavancagem_ok"] = True
 
-    # Dív.Líq/Patrim (derivada) <= teto, exceto financeiras
+    # Dív.Líq/Patrim: usa o valor do yfinance (dívida líq./patrimônio); onde faltar,
+    # deriva dos índices (Dív.Líq/EBITDA × P/VP) / (EV/EBITDA − Dív.Líq/EBITDA).
     from criteria import net_debt_to_equity
-    df["div_liq_patrim"] = pd.to_numeric(
+    derivada = pd.to_numeric(
         df.apply(lambda r: net_debt_to_equity(r.get("pvp"), r.get("ev_ebitda"),
                                               r.get("div_liq_ebitda")), axis=1),
-        errors="coerce").round(2)
+        errors="coerce")
+    base = pd.to_numeric(df.get("div_liq_patrim_src"), errors="coerce") \
+        if "div_liq_patrim_src" in df.columns else pd.Series(index=df.index, dtype=float)
+    df["div_liq_patrim"] = base.fillna(derivada).round(2)
     if max_net_debt_equity and max_net_debt_equity > 0:
         nde = df["div_liq_patrim"]
         endivid_patrim = (~fin_series) & nde.notna() & (nde > max_net_debt_equity)

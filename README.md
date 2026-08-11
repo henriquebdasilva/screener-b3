@@ -357,3 +357,5 @@ regenerar sem esperar o dia seguinte:
   no mapeamento de colunas e no bloco de score correspondente.
 - Enviar só quando houver ao menos 1 papel com oportunidade gráfica → guardar em
   `screener.run()` antes de chamar o e-mail (checar `oportunidade_grafica != 'Não'`).
+
+**Tabela de indicadores (por seção).** Abaixo de cada lista, uma tabela **Indicadores fundamentalistas** por papel: P/L, P/VP, PEG, EV/EBITDA, Dív.Líq/EBITDA, Dív.Líq/PL, ROE e ROIC. Cada valor é **colorido vs. a mediana do setor** no universo do dia (verde = melhor; vermelho = pior). Setores com poucos papéis têm mediana menos robusta; financeiras não têm alguns indicadores (—).
