@@ -62,6 +62,8 @@ class Ceilings:
     dcf: float = math.nan
     lynch: float = math.nan
     projetivo: float = math.nan         # Bazin projetivo: LPA×(1+g)×payout / DY-alvo
+    graham_selic: float = math.nan      # Graham ajustado à taxa de juros (Selic)
+    mult_ebitda: float = math.nan       # múltiplo-alvo EV/EBITDA (setor)
     media: float = math.nan
     mediana: float = math.nan
     ajustado: float = math.nan          # mediana × (1 − desconto): margem de segurança
@@ -93,7 +95,9 @@ def compute_ceilings(price: float, pl: float, pvp: float, dy_pct: float,
                      pl_min: float = 2.5, pl_max: float = 150.0,
                      max_upside: float = 200.0, raw_disp_max: float = 8.0,
                      eps_real: float = None, payout: float = None,
-                     proj_yield: float = 0.06, proj_g_cap: float = 0.15) -> Ceilings:
+                     proj_yield: float = 0.06, proj_g_cap: float = 0.15,
+                     ev_ebitda: float = None, div_liq_ebitda: float = None,
+                     target_ev_ebitda: float = None, graham_g_cap: float = 15.0) -> Ceilings:
     c = Ceilings()
     if not _pos(price):
         return c
@@ -139,10 +143,30 @@ def compute_ceilings(price: float, pl: float, pvp: float, dy_pct: float,
     if _pos(eps) and _pos(pay) and proj_yield and proj_yield > 0:
         c.projetivo = eps * (1 + gp) * pay / proj_yield
 
+    # Graham ajustado à Selic: LPA × (8,5 + 2g) × 4,4 / Y  (Y = Selic %, g em pontos %)
+    if _pos(lpa) and selic_pct and selic_pct > 0:
+        g_pct = growth_pct if (growth_pct is not None and not
+                (isinstance(growth_pct, float) and math.isnan(growth_pct))
+                and growth_pct > 0) else 0.0
+        g_pct = min(g_pct, graham_g_cap)
+        c.graham_selic = lpa * (8.5 + 2.0 * g_pct) * 4.4 / selic_pct
+
+    # Múltiplo-alvo EV/EBITDA: preço a que a ação negociaria no múltiplo-alvo (mediana do
+    # setor). Deriva de EBITDA implícito: preço × (alvo − DL/EBITDA)/(EV/EBITDA − DL/EBITDA).
+    if (target_ev_ebitda and target_ev_ebitda > 0 and _pos(ev_ebitda)
+            and div_liq_ebitda is not None and not (isinstance(div_liq_ebitda, float)
+            and math.isnan(div_liq_ebitda))):
+        denom = ev_ebitda - div_liq_ebitda          # = valor de mercado / EBITDA (>0)
+        if denom > 0.1:
+            val = price * (target_ev_ebitda - div_liq_ebitda) / denom
+            if val > 0:
+                c.mult_ebitda = val
+
     if is_financial:
         candidates = (c.bazin, c.gordon, c.dcf, c.projetivo)
     else:
-        candidates = (c.bazin, c.graham, c.gordon, c.dcf, c.lynch, c.projetivo)
+        candidates = (c.bazin, c.graham, c.gordon, c.dcf, c.lynch, c.projetivo,
+                      c.graham_selic, c.mult_ebitda)
     vals = [x for x in candidates if _pos(x)]
     if vals:
         # dispersão CRUA (antes do descarte) — sinaliza inputs inconsistentes

@@ -143,6 +143,26 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     ]
 
     chk_rows, ceil_rows = {}, {}
+    # múltiplo-alvo EV/EBITDA = mediana do setor (não-financeiras), limitado a [3, 15];
+    # fallback = mediana geral. Serve de âncora do método de múltiplo-alvo.
+    _nf = df[~df.index.map(lambda t: fin_map.get(t, False))]
+    _ev_geral = pd.to_numeric(_nf.get("ev_ebitda"), errors="coerce")
+    _ev_geral = _ev_geral[(_ev_geral > 0) & (_ev_geral < 50)]
+    ev_alvo_geral = float(_ev_geral.median()) if len(_ev_geral) else 7.0
+    ev_alvo_setor = {}
+    if "ev_ebitda" in _nf.columns:
+        for setor, g in _nf.groupby(_nf["setor"].fillna("")):
+            vv = pd.to_numeric(g["ev_ebitda"], errors="coerce")
+            vv = vv[(vv > 0) & (vv < 50)]
+            if len(vv) >= 3:
+                ev_alvo_setor[str(setor)] = float(vv.median())
+
+    def _ev_target(tk):
+        if fin_map.get(tk, False):
+            return None
+        alvo = ev_alvo_setor.get(str(df.at[tk, "setor"]), ev_alvo_geral)
+        return min(max(alvo, 3.0), 15.0)          # âncora sensata (evita mediana ruim)
+
     for tk in df.index:
         row = df.loc[tk]
         ch = evaluate(row, smeans, selic, market_cap=mcap.get(tk),
@@ -173,10 +193,15 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                       if pd.notna(payout_med.get(tk, float("nan")))
                                       else (row.get("payout_ratio")
                                             if pd.notna(row.get("payout_ratio")) else None)),
-                              proj_yield=teto_proj_yield / 100.0)
+                              proj_yield=teto_proj_yield / 100.0,
+                              ev_ebitda=row.get("ev_ebitda"),
+                              div_liq_ebitda=row.get("div_liq_ebitda"),
+                              target_ev_ebitda=_ev_target(tk))
         ceil_rows[tk] = {"teto_bazin": cc.bazin, "teto_graham": cc.graham,
                          "teto_gordon": cc.gordon, "teto_dcf": cc.dcf,
                          "teto_lynch": cc.lynch, "teto_projetivo": cc.projetivo,
+                         "teto_graham_selic": cc.graham_selic,
+                         "teto_mult_ebitda": cc.mult_ebitda,
                          "teto_medio": cc.media,
                          "teto_mediana": cc.mediana, "teto_ajustado": cc.ajustado,
                          "teto_n_metodos": cc.n_metodos,
@@ -376,6 +401,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "liq_corr", "div_patrim", "peg", "payout", "cresc_5a", "close",
             "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_projetivo",
+            "teto_graham_selic", "teto_mult_ebitda",
             "teto_medio", "teto_mediana",
             "teto_ajustado", "teto_n_metodos", "teto_confiavel", "teto_dispersao",
             "teto_upside_pct",

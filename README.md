@@ -361,3 +361,7 @@ regenerar sem esperar o dia seguinte:
 **Tabela de indicadores (por seção).** Abaixo de cada lista, uma tabela **Indicadores fundamentalistas** por papel: P/L, P/VP, PEG, EV/EBITDA, Dív.Líq/EBITDA, Dív.Líq/PL, ROE e ROIC. Cada valor é **colorido vs. a mediana do setor** no universo do dia (verde = melhor; vermelho = pior). Setores com poucos papéis têm mediana menos robusta; financeiras não têm alguns indicadores (—).
 
 **Teto projetivo (à la Hannah).** 6º método: LPA×(1+crescimento)×**payout médio** ÷ DY-alvo. O payout médio é a média de (dividendo anual ÷ LPA anual) dos últimos anos (yfinance, best-effort; fallback: payout do yfinance ou implícito). DY-alvo fixo em `--teto-proj-yield` (default 6%). LPA real do yfinance ou preço/PL. Coluna própria (Projet.) e entra no consolidado (média/mediana).
+
+**Graham ajustado à Selic.** LPA × (8,5 + 2g) × 4,4 ÷ Selic — a fórmula de Graham com crescimento, sensível ao nível de juros (com Selic alta, o teto cai). g limitado a 15%. Coluna Grah.Selic. Não-financeiras.
+
+**Múltiplo-alvo EV/EBITDA.** Preço a que a ação negociaria no EV/EBITDA-alvo (mediana do setor, limitada a 3–15×): preço × (alvo − DL/EBITDA) ÷ (EV/EBITDA − DL/EBITDA). Âncora de valuation relativo. Coluna Múlt.EV. Não-financeiras (dependem de EV/EBITDA e dívida líquida do yfinance).

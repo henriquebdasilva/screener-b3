@@ -134,7 +134,8 @@ def _teto_table(df: pd.DataFrame) -> str:
         except Exception:
             return "—"
     head = ("<tr><th>Ativo</th><th>Preço</th><th>Bazin</th><th>Gordon</th><th>DCF</th>"
-            "<th>Graham</th><th>Lynch</th><th>Média</th><th>Mediana</th>"
+            "<th>Graham</th><th>Grah.Selic</th><th>Lynch</th><th>Projet.</th>"
+            "<th>Múlt.EV</th><th>Média</th><th>Mediana</th>"
             "<th>Ajust.</th><th>Upside*</th></tr>")
     rows = []
     for _, r in df.iterrows():
@@ -144,10 +145,13 @@ def _teto_table(df: pd.DataFrame) -> str:
             f"<tr><td><b>{r.name}</b></td><td>{num(r.get('close'))}</td>"
             f"<td>{num(r.get('teto_bazin'))}</td><td>{num(r.get('teto_gordon'))}</td>"
             f"<td>{num(r.get('teto_dcf'))}</td><td>{num(r.get('teto_graham'))}</td>"
-            f"<td>{num(r.get('teto_lynch'))}</td><td>{num(r.get('teto_medio'))}</td>"
+            f"<td>{num(r.get('teto_graham_selic'))}</td>"
+            f"<td>{num(r.get('teto_lynch'))}</td><td>{num(r.get('teto_projetivo'))}</td>"
+            f"<td>{num(r.get('teto_mult_ebitda'))}</td>"
+            f"<td>{num(r.get('teto_medio'))}</td>"
             f"<td>{num(r.get('teto_mediana'))}</td>"
             f"<td><b>{num(r.get('teto_ajustado'))}</b></td><td>{up_s}</td></tr>")
-    return f"<table>{head}{''.join(rows)}</table>"
+    return f'<div class="ind"><table>{head}{"".join(rows)}</table></div>'
 
 
 def _agenda_table(df: pd.DataFrame) -> str:
