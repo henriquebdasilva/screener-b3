@@ -272,34 +272,38 @@ _IND_METRICS = [
 
 
 def _risco_table(df: pd.DataFrame) -> str:
-    """Tabela técnica/risco: mínima e máxima de 1 ano, distância da mínima 52s, posição vs
-    MM100 (acima/abaixo), beta e correlação com o Ibovespa."""
+    """Tabela técnica/risco: preço atual, mínima e máxima de 52 semanas (R$), distância da
+    mínima 52s (com sinal/cor), posição vs MM100 (acima/abaixo), beta e correlação c/ Ibov."""
     def cell(v, pct=False, sign=False):
         if v is None or (isinstance(v, float) and pd.isna(v)):
             return "<td style='text-align:right;color:#9ca3af'>—</td>"
         if pct:
-            cor = "#16a34a" if (sign and float(v) >= 0) else ("#dc2626" if sign else "")
+            cor = ""
+            if sign:
+                cor = "#16a34a" if float(v) >= 0 else "#dc2626"
             s = f"{float(v):+.1f}%" if sign else f"{float(v):.1f}%"
-            return f"<td style='text-align:right;color:{cor}'>{s}</td>" if cor \
-                else f"<td style='text-align:right'>{s}</td>"
+            return (f"<td style='text-align:right;color:{cor}'>{s}</td>" if cor
+                    else f"<td style='text-align:right'>{s}</td>")
         return f"<td style='text-align:right'>{float(v):.2f}</td>"
 
-    head = ("<tr><th>Ativo</th><th style='text-align:right'>Mín 1a</th>"
-            "<th style='text-align:right'>Máx 1a</th><th style='text-align:right'>vs Mín</th>"
+    head = ("<tr><th>Ativo</th><th style='text-align:right'>Preço</th>"
+            "<th style='text-align:right'>Mín 52s</th><th style='text-align:right'>Máx 52s</th>"
+            "<th style='text-align:right'>vs Min52</th>"
             "<th style='text-align:right'>vs MM100</th><th style='text-align:right'>Beta</th>"
             "<th style='text-align:right'>Corr.Ibov</th></tr>")
     linhas = []
     for tk, r in df.iterrows():
         linhas.append(
-            f"<tr><td><b>{tk}</b></td>{cell(r.get('min_52s'))}{cell(r.get('max_52s'))}"
-            f"{cell(r.get('dist_min52'), pct=True)}"
+            f"<tr><td><b>{tk}</b></td>{cell(r.get('close'))}"
+            f"{cell(r.get('min_52s'))}{cell(r.get('max_52s'))}"
+            f"{cell(r.get('dist_min52'), pct=True, sign=True)}"
             f"{cell(r.get('dist_mm100'), pct=True, sign=True)}"
             f"{cell(r.get('beta'))}{cell(r.get('corr_ibov'))}</tr>")
-    leg = ('<p class="sub" style="margin:4px 0 0">Mín/Máx 1a em R$; vs Mín = distância da '
-           'mínima de 52 semanas; vs MM100 = posição vs média de 100 dias '
-           '(<span style="color:#16a34a">+ acima</span> / '
-           '<span style="color:#dc2626">− abaixo</span>); Beta e correlação vs Ibovespa '
-           '(retornos diários, ~1 ano).</p>')
+    leg = ('<p class="sub" style="margin:4px 0 0">Preço, Mín 52s e Máx 52s em R$ (mínima e '
+           'máxima de 52 semanas). vs Min52 = distância da mínima de 52 semanas; vs MM100 = '
+           'posição vs média de 100 dias. <span style="color:#16a34a">Verde/+</span> acima, '
+           '<span style="color:#dc2626">vermelho/−</span> abaixo. Beta e correlação vs '
+           'Ibovespa (retornos diários, ~1 ano).</p>')
     return (f'<h3 style="{_H3}">Preço &amp; risco</h3>'
             f'<div class="ind"><table>{head}{"".join(linhas)}</table></div>{leg}')
 
