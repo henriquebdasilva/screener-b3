@@ -36,6 +36,8 @@ class Fundamentals:
     div_liq_ebitda: float = math.nan  # Dívida líquida/EBITDA
     div_patrim: float = math.nan    # Dívida bruta/Patrimônio (fundamentus)
     div_liq_patrim: float = math.nan  # Dívida líquida/Patrimônio (derivada do yfinance)
+    lpa: float = math.nan             # lucro por ação (trailing EPS)
+    payout_ratio: float = math.nan    # payout real (0-1), quando disponível
     liq_corr: float = math.nan      # Liquidez corrente
     cresc_5a: float = math.nan      # Crescimento receita 5a (%) -> proxy p/ PEG
     market_cap: float = math.nan    # Valor de mercado (R$)
@@ -161,6 +163,9 @@ def _from_yfinance(ticker: str) -> Fundamentals:
     eg = g("earningsGrowth", "revenueGrowth")
     f.cresc_5a = eg * 100 if pd.notna(eg) else math.nan
     f.market_cap = g("marketCap")
+    f.lpa = g("trailingEps", "epsTrailingTwelveMonths")
+    pr = g("payoutRatio")
+    f.payout_ratio = pr if (pd.notna(pr) and 0 < pr <= 2) else math.nan
     # Dívida líquida a partir do balanço (yfinance): (dívida total − caixa)
     td, tc, eb = g("totalDebt"), g("totalCash"), g("ebitda")
     if pd.notna(td) and pd.notna(eb) and eb > 0:
@@ -198,7 +203,7 @@ def get_fundamentals(ticker: str, sector_hint: str = "") -> Fundamentals:
             yf_f = _from_yfinance(ticker)
             for a in ("pl", "pvp", "dy", "roe", "roic", "mrg_liq", "ev_ebitda",
                       "div_liq_ebitda", "div_liq_patrim", "div_patrim", "liq_corr",
-                      "cresc_5a", "market_cap"):
+                      "cresc_5a", "market_cap", "lpa", "payout_ratio"):
                 if pd.isna(getattr(f, a)) and pd.notna(getattr(yf_f, a)):
                     setattr(f, a, getattr(yf_f, a))
             if not f.setor and yf_f.setor:
@@ -360,15 +365,15 @@ def paid_dividends_ge(px, years: int = 5, thr_pct: float = 5.0):
 
 
 def get_net_income_history(ticker: str):
-    """Best-effort: (lista de lucro líquido ANUAL, lista TRIMESTRAL) do yfinance.
+    """Best-effort: (lucro ANUAL, lucro TRIMESTRAL, {ano: LPA}) do yfinance.
 
-    Cobertura da B3 é irregular -> frequentemente vazio. Retorna ([], []) em falha.
+    Cobertura da B3 é irregular -> frequentemente vazio. Retorna ([], [], {}) em falha.
     Desligue com env PROFIT_HISTORY=0.
     """
     import os
     if os.getenv("PROFIT_HISTORY", "1") == "0":
-        return [], []
-    annual, quarterly = [], []
+        return [], [], {}
+    annual, quarterly, eps_by_year = [], [], {}
     try:
         import yfinance as yf
         t = yf.Ticker(to_yahoo(ticker))
@@ -383,11 +388,44 @@ def get_net_income_history(ticker: str):
                                     if pd.notna(x)]
                             dest.extend(vals)          # ordem: mais recente -> antigo
                             break
+                    if attr == "income_stmt":          # LPA anual por ano (mesma chamada)
+                        for key in ("Diluted EPS", "Basic EPS"):
+                            if key in st.index:
+                                for col, val in st.loc[key].items():
+                                    yr = getattr(col, "year", None)
+                                    if yr and pd.notna(val):
+                                        try:
+                                            eps_by_year[int(yr)] = float(val)
+                                        except Exception:
+                                            pass
+                                break
             except Exception:
                 pass
     except Exception:
         pass
-    return annual, quarterly
+    return annual, quarterly, eps_by_year
+
+
+def avg_payout(eps_by_year: dict, px, years: int = 5):
+    """Payout médio = média de (dividendo anual por ação ÷ LPA do ano), nos anos disponíveis.
+
+    Usa LPA anual (yfinance) e dividendos anuais (histórico de preços). Retorna None se
+    houver menos de 2 anos com ambos válidos. Ignora payout <=0 ou > 200% (dado ruim)."""
+    try:
+        if not eps_by_year or px is None or "Dividends" not in getattr(px, "columns", []):
+            return None
+        d = px["Dividends"].fillna(0.0).groupby(px.index.year).sum()
+        pos = []
+        for yr, eps in eps_by_year.items():
+            if yr in d.index and eps and eps > 0 and d[yr] > 0:
+                po = float(d[yr]) / float(eps)
+                if 0 < po <= 2:
+                    pos.append(po)
+        if len(pos) >= 2:
+            return sum(pos) / len(pos)
+    except Exception:
+        pass
+    return None
 
 
 def dividends_no_cut(px, years: int = 5, tol: float = 0.20):

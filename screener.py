@@ -38,7 +38,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         max_net_debt_equity=1.5, split_by_origin=True, group_top=None,
         use_basileia=True, cyclical_penalty=0.25, defensive_max_cyc=0.4,
         teto_max_upside=200.0, teto_disp_max=8.0,
-        suspect_pl_min=2.0, suspect_dy_max=20.0):
+        suspect_pl_min=2.0, suspect_dy_max=20.0, teto_proj_yield=6.0):
 
     tickers = get_universe(universe)
     from watchlist import get_wishlist, get_carteira
@@ -61,12 +61,12 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     from datafeed import (get_selic, get_insider_sells, avg_annual_dy,
                           listed_years, paid_dividends_ge, get_net_income_history,
-                          dividends_no_cut)
+                          dividends_no_cut, avg_payout)
     selic = get_selic()
     print(f"Universo: {len(items)} tickers ({universe}). Selic usada: {selic:.2f}%")
 
     funds, breaks, origem, mcap, insider, avg_dy = [], {}, {}, {}, {}, {}
-    listed_y, div_ge5, profit_hist, div_nocut = {}, {}, {}, {}
+    listed_y, div_ge5, profit_hist, div_nocut, payout_med = {}, {}, {}, {}, {}
     for i, (tk, orig) in enumerate(items, 1):
         origem[tk] = "+".join(orig)
         try:
@@ -75,6 +75,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             mcap[tk] = f.market_cap
         except Exception as e:
             print(f"  [fund] {tk}: {e}")
+        px = None
         try:
             px = get_prices(tk)
             breaks[tk] = detect_breakout(
@@ -95,7 +96,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         except Exception:
             insider[tk] = None
         try:
-            profit_hist[tk] = get_net_income_history(tk)     # (anual, trimestral)
+            ni_a, ni_q, eps_year = get_net_income_history(tk)   # (anual, trimestral, {ano:LPA})
+            profit_hist[tk] = (ni_a, ni_q)
+            payout_med[tk] = avg_payout(eps_year, px)           # payout médio (5a), best-effort
         except Exception:
             profit_hist[tk] = ([], [])
         if i % 10 == 0:
@@ -164,10 +167,17 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                               safety_discount=teto_desconto_pct / 100.0,
                               outlier_mult=teto_outlier_mult,
                               is_financial=fin_map.get(tk, False),
-                              max_upside=teto_max_upside, raw_disp_max=teto_disp_max)
+                              max_upside=teto_max_upside, raw_disp_max=teto_disp_max,
+                              eps_real=row.get("lpa"),
+                              payout=(payout_med.get(tk)
+                                      if pd.notna(payout_med.get(tk, float("nan")))
+                                      else (row.get("payout_ratio")
+                                            if pd.notna(row.get("payout_ratio")) else None)),
+                              proj_yield=teto_proj_yield / 100.0)
         ceil_rows[tk] = {"teto_bazin": cc.bazin, "teto_graham": cc.graham,
                          "teto_gordon": cc.gordon, "teto_dcf": cc.dcf,
-                         "teto_lynch": cc.lynch, "teto_medio": cc.media,
+                         "teto_lynch": cc.lynch, "teto_projetivo": cc.projetivo,
+                         "teto_medio": cc.media,
                          "teto_mediana": cc.mediana, "teto_ajustado": cc.ajustado,
                          "teto_n_metodos": cc.n_metodos,
                          "teto_confiavel": cc.confiavel, "teto_dispersao": round(cc.dispersao, 1)
@@ -365,7 +375,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "ev_ebitda", "div_liq_ebitda",
             "liq_corr", "div_patrim", "peg", "payout", "cresc_5a", "close",
             "teto_bazin", "teto_gordon",
-            "teto_dcf", "teto_graham", "teto_lynch", "teto_medio", "teto_mediana",
+            "teto_dcf", "teto_graham", "teto_lynch", "teto_projetivo",
+            "teto_medio", "teto_mediana",
             "teto_ajustado", "teto_n_metodos", "teto_confiavel", "teto_dispersao",
             "teto_upside_pct",
             "teto_upside_media_pct", "prox_resultado",
@@ -532,6 +543,9 @@ def parse_args():
     p.add_argument("--suspect-dy-max", type=float, default=20.0,
                    help="DY médio (5a) acima/igual disso é suspeito -> sai do Dividend "
                         "(default 20; 0 desliga)")
+    p.add_argument("--teto-proj-yield", type=float, default=6.0,
+                   help="DY-alvo (%%) do teto projetivo Bazin: LPA×(1+g)×payout / DY-alvo "
+                        "(default 6.0)")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -571,4 +585,5 @@ if __name__ == "__main__":
         use_basileia=not a.no_basileia, cyclical_penalty=a.cyclical_penalty,
         defensive_max_cyc=a.defensive_max_cyc,
         teto_max_upside=a.teto_max_upside, teto_disp_max=a.teto_disp_max,
-        suspect_pl_min=a.suspect_pl_min, suspect_dy_max=a.suspect_dy_max)
+        suspect_pl_min=a.suspect_pl_min, suspect_dy_max=a.suspect_dy_max,
+        teto_proj_yield=a.teto_proj_yield)

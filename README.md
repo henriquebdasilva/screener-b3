@@ -359,3 +359,5 @@ regenerar sem esperar o dia seguinte:
   `screener.run()` antes de chamar o e-mail (checar `oportunidade_grafica != 'Não'`).
 
 **Tabela de indicadores (por seção).** Abaixo de cada lista, uma tabela **Indicadores fundamentalistas** por papel: P/L, P/VP, PEG, EV/EBITDA, Dív.Líq/EBITDA, Dív.Líq/PL, ROE e ROIC. Cada valor é **colorido vs. a mediana do setor** no universo do dia (verde = melhor; vermelho = pior). Setores com poucos papéis têm mediana menos robusta; financeiras não têm alguns indicadores (—).
+
+**Teto projetivo (à la Hannah).** 6º método: LPA×(1+crescimento)×**payout médio** ÷ DY-alvo. O payout médio é a média de (dividendo anual ÷ LPA anual) dos últimos anos (yfinance, best-effort; fallback: payout do yfinance ou implícito). DY-alvo fixo em `--teto-proj-yield` (default 6%). LPA real do yfinance ou preço/PL. Coluna própria (Projet.) e entra no consolidado (média/mediana).

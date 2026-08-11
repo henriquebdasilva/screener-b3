@@ -61,6 +61,7 @@ class Ceilings:
     gordon: float = math.nan
     dcf: float = math.nan
     lynch: float = math.nan
+    projetivo: float = math.nan         # Bazin projetivo: LPA×(1+g)×payout / DY-alvo
     media: float = math.nan
     mediana: float = math.nan
     ajustado: float = math.nan          # mediana × (1 − desconto): margem de segurança
@@ -90,7 +91,9 @@ def compute_ceilings(price: float, pl: float, pvp: float, dy_pct: float,
                      outlier_mult: float = 2.5,
                      is_financial: bool = False,
                      pl_min: float = 2.5, pl_max: float = 150.0,
-                     max_upside: float = 200.0, raw_disp_max: float = 8.0) -> Ceilings:
+                     max_upside: float = 200.0, raw_disp_max: float = 8.0,
+                     eps_real: float = None, payout: float = None,
+                     proj_yield: float = 0.06, proj_g_cap: float = 0.15) -> Ceilings:
     c = Ceilings()
     if not _pos(price):
         return c
@@ -122,10 +125,24 @@ def compute_ceilings(price: float, pl: float, pvp: float, dy_pct: float,
         fair_pl = min(growth_pct + (dy_pct if _pos(dy_pct) else 0.0), 30.0)
         c.lynch = lpa * fair_pl
 
+    # Teto projetivo (à la Hannah): LPA×(1+g)×payout ÷ DY-alvo (fixo).
+    # LPA real (yfinance) ou preço/PL; payout: usa o passado (payout médio) se houver, senão
+    # o implícito (DPA médio/LPA); DY-alvo = proj_yield (fixo, ex.: 6%).
+    eps = eps_real if _pos(eps_real) else lpa
+    pay = payout if (payout is not None and 0 < payout <= 1.5) else \
+        ((dpa / eps) if (_pos(dpa) and _pos(eps)) else math.nan)
+    if _pos(pay):
+        pay = min(pay, 1.0)                             # payout > 100% não é sustentável
+    gp = (growth_pct / 100.0) if (growth_pct is not None and not
+          (isinstance(growth_pct, float) and math.isnan(growth_pct)) and growth_pct > 0) else 0.0
+    gp = min(gp, proj_g_cap)
+    if _pos(eps) and _pos(pay) and proj_yield and proj_yield > 0:
+        c.projetivo = eps * (1 + gp) * pay / proj_yield
+
     if is_financial:
-        candidates = (c.bazin, c.gordon, c.dcf)
+        candidates = (c.bazin, c.gordon, c.dcf, c.projetivo)
     else:
-        candidates = (c.bazin, c.graham, c.gordon, c.dcf, c.lynch)
+        candidates = (c.bazin, c.graham, c.gordon, c.dcf, c.lynch, c.projetivo)
     vals = [x for x in candidates if _pos(x)]
     if vals:
         # dispersão CRUA (antes do descarte) — sinaliza inputs inconsistentes
