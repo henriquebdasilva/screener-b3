@@ -131,6 +131,14 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     df["cagr_setor_med"] = df["setor"].map(lambda s: smeans.get(s, {}).get("cresc_5a"))
     fin_map = {f.ticker: f.is_financial() for f in funds}
 
+    # payout aproximado (dividendo/lucro) = DY médio 5a × P/L (só quando ambos válidos)
+    df["payout"] = [
+        (float(dv) * float(pl)) if (pd.notna(dv) and pd.notna(pl) and pl > 0 and dv > 0)
+        else float("nan")
+        for dv, pl in zip(df.get("dy_div", pd.Series(index=df.index)),
+                          df.get("pl", pd.Series(index=df.index)))
+    ]
+
     chk_rows, ceil_rows = {}, {}
     for tk in df.index:
         row = df.loc[tk]
@@ -350,8 +358,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "margem_ge_15", "cagr_ge_setor", "divida_ok", "marketcap_ok", "insider_ok",
             "alavancagem_ok", "div_liq_patrim", "nde_ok",
             "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roic", "mrg_liq",
-            "div_liq_ebitda",
-            "liq_corr", "div_patrim", "peg", "close", "teto_bazin", "teto_gordon",
+            "ev_ebitda", "div_liq_ebitda",
+            "liq_corr", "div_patrim", "peg", "payout", "cresc_5a", "close",
+            "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_medio", "teto_mediana",
             "teto_ajustado", "teto_n_metodos", "teto_confiavel", "teto_dispersao",
             "teto_upside_pct",
@@ -363,6 +372,15 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     cols = [c for c in cols if c in df.columns]
     full = df[cols].round(2)
     full.to_csv(f"{outdir}/screener_{hoje}.csv", encoding="utf-8-sig")
+
+    # medianas por setor (universo do dia) dos indicadores exibidos no e-mail
+    _ind_cols = ["pl", "pvp", "peg", "ev_ebitda", "div_liq_ebitda", "div_liq_patrim",
+                 "roe", "roic", "payout", "mrg_liq", "liq_corr", "cresc_5a"]
+    setor_medians = {}
+    for setor, g in df.groupby(df["setor"].fillna("")):
+        setor_medians[str(setor)] = {c: float(g[c].median(skipna=True))
+                                     for c in _ind_cols if c in df.columns
+                                     and pd.notna(g[c].median(skipna=True))}
 
     # SELEÇÃO = passa nos critérios fundamentalistas (o rompimento é só flag, não filtra)
     selecionados = full[full["fund_ok"]].sort_values("investment", ascending=False)
@@ -395,6 +413,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                               group_pct=(int(round(frac * 100)) if split_by_origin
                                          and min_invest is None else None),
                               defensive_cyc=defensive_max_cyc,
+                              setor_medians=setor_medians,
                               wishlist_df=full[full["in_wishlist"]].sort_values(
                                   "investment", ascending=False),
                               carteira_df=full[full["in_carteira"]].sort_values(

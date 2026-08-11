@@ -70,6 +70,9 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:#6b7280;font-size:13px;margin:0 0 16
 table{border-collapse:collapse;width:100%;font-size:13px}
 th{background:#1f3864;color:#fff;text-align:left;padding:8px}
 td{padding:7px 8px;border-bottom:1px solid #e5e7eb}
+.ind table{font-size:11px}
+.ind th{padding:4px 5px}
+.ind td{padding:3px 5px}
 tr:nth-child(even) td{background:#f3f4f6}
 .tag{display:inline-block;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:700}
 .romp{background:#dcfce7;color:#166534}.piv{background:#fef9c3;color:#854d0e}
@@ -251,6 +254,50 @@ def _mood_block(mood: dict) -> str:
             f'<table>{head}{"".join(rows)}</table>')
 
 
+_SECTOR_MED = {}
+# (coluna, rótulo, direção: 'hi'|'lo'|None, é_percentual)  — None = sem coloração
+_IND_METRICS = [
+    ("pl", "P/L", "lo", False), ("pvp", "P/VP", "lo", False),
+    ("peg", "PEG", "lo", False), ("ev_ebitda", "EV/EB", "lo", False),
+    ("div_liq_ebitda", "DL/EB", "lo", False), ("div_liq_patrim", "DL/PL", "lo", False),
+    ("roe", "ROE", "hi", True), ("roic", "ROIC", "hi", True),
+    ("payout", "Pay.", None, True),           # payout é não-monotônico -> sem cor
+    ("mrg_liq", "Mrg", "hi", True), ("liq_corr", "Liq", "hi", False),
+    ("cresc_5a", "Cresc", "hi", True),
+]
+
+
+def _ind_cell(val, med, direc, pct) -> str:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "<td style='text-align:right;color:#9ca3af'>—</td>"
+    txt = f"{float(val):.1f}%" if pct else f"{float(val):.2f}"
+    cor = ""
+    if direc and med is not None and not (isinstance(med, float) and pd.isna(med)):
+        melhor = (val > med) if direc == "hi" else (val < med)
+        cor = "color:#16a34a" if melhor else "color:#dc2626"
+    return f"<td style='text-align:right;{cor}'>{txt}</td>"
+
+
+def _ind_table(df: pd.DataFrame) -> str:
+    head = ("<tr><th>Ativo</th>"
+            + "".join(f"<th style='text-align:right'>{lbl}</th>"
+                      for _, lbl, _, _ in _IND_METRICS) + "</tr>")
+    linhas = []
+    for tk, r in df.iterrows():
+        med = _SECTOR_MED.get(str(r.get("setor", "")), {})
+        cells = "".join(_ind_cell(r.get(col), med.get(col), direc, pct)
+                        for col, _, direc, pct in _IND_METRICS)
+        linhas.append(f"<tr><td><b>{tk}</b></td>{cells}</tr>")
+    leg = ('<p class="sub" style="margin:4px 0 0">EV/EB = EV/EBITDA; DL/EB = Dív.líq./EBITDA; '
+           'DL/PL = Dív.líq./Patrimônio; Pay. = payout; Mrg = margem líq.; Liq = liquidez '
+           'corr.; Cresc = cresc. receita 5a. ROE/ROIC/Mrg/Cresc/Pay. em %. '
+           '<span style="color:#16a34a">Verde</span> = melhor que a mediana do setor; '
+           '<span style="color:#dc2626">vermelho</span> = pior (payout sem cor por ser '
+           'não-monotônico). Financeiras não têm alguns indicadores (—).</p>')
+    return (f'<h3 style="{_H3}">Indicadores fundamentalistas</h3>'
+            f'<div class="ind"><table>{head}{"".join(linhas)}</table></div>{leg}')
+
+
 def _main_head() -> str:
     return ("<tr><th>Ativo</th><th>Origem</th><th>Setor</th><th>Invest.</th>"
             "<th>Qual.</th><th>Value</th><th>Safety</th><th>Div.</th><th>Consist.</th>"
@@ -271,6 +318,7 @@ def _group_block(df: pd.DataFrame, title: str) -> str:
         return (f'<h2 style="{_H2}">{title}</h2>'
                 f'<p class="empty">Nenhum papel neste grupo hoje.</p>')
     parts = [_main_table(df, title)]
+    parts.append(_ind_table(df))
     parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
     if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
         parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
@@ -287,7 +335,7 @@ def _defensivas_section(df: pd.DataFrame, thr: float) -> str:
            'saúde, consumo básico, telecom e financeiro.</p>')
     rows = "".join(_fmt_row(r) for _, r in df.iterrows())
     return (f'<h2 style="{_H2}">{title} — {len(df)} papéis</h2>{sub}'
-            f'<table>{_main_head()}{rows}</table>')
+            f'<table>{_main_head()}{rows}</table>{_ind_table(df)}')
 
 
 def _posicao_table(df: pd.DataFrame) -> str:
@@ -321,6 +369,7 @@ def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False) 
     if posicao:
         parts.append(_posicao_table(df))
     parts.append(f'<table>{_main_head()}{"".join(_fmt_row(r) for _, r in df.iterrows())}</table>')
+    parts.append(_ind_table(df))
     parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
     if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
         parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
@@ -331,7 +380,9 @@ def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False) 
 def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                market: dict = None, mood: dict = None, group_pct: int = None,
                defensive_cyc: float = 0.4, wishlist_df: pd.DataFrame = None,
-               carteira_df: pd.DataFrame = None) -> str:
+               carteira_df: pd.DataFrame = None, setor_medians: dict = None) -> str:
+    global _SECTOR_MED
+    _SECTOR_MED = setor_medians or {}
     topo = _market_block(market) + _mood_block(mood)
     suf = f" ({group_pct}% de maior score)" if group_pct else ""
     watch = ""
