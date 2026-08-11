@@ -37,6 +37,7 @@ class Fundamentals:
     div_patrim: float = math.nan    # Dívida bruta/Patrimônio (fundamentus)
     div_liq_patrim: float = math.nan  # Dívida líquida/Patrimônio (derivada do yfinance)
     lpa: float = math.nan             # lucro por ação (trailing EPS)
+    pl_fut: float = math.nan          # P/L futuro estimado (forward P/E, yfinance)
     payout_ratio: float = math.nan    # payout real (0-1), quando disponível
     liq_corr: float = math.nan      # Liquidez corrente
     cresc_5a: float = math.nan      # Crescimento receita 5a (%) -> proxy p/ PEG
@@ -164,6 +165,7 @@ def _from_yfinance(ticker: str) -> Fundamentals:
     f.cresc_5a = eg * 100 if pd.notna(eg) else math.nan
     f.market_cap = g("marketCap")
     f.lpa = g("trailingEps", "epsTrailingTwelveMonths")
+    f.pl_fut = g("forwardPE")
     pr = g("payoutRatio")
     f.payout_ratio = pr if (pd.notna(pr) and 0 < pr <= 2) else math.nan
     # Dívida líquida a partir do balanço (yfinance): (dívida total − caixa)
@@ -198,12 +200,13 @@ def get_fundamentals(ticker: str, sector_hint: str = "") -> Fundamentals:
         # completa buracos com yfinance (inclui dívida líquida, que o fundamentus não traz)
         yf_needed = any(pd.isna(getattr(f, a)) for a in
                         ("pl", "pvp", "dy", "roe", "ev_ebitda", "div_patrim",
-                         "liq_corr", "market_cap", "div_liq_ebitda", "div_liq_patrim"))
+                         "liq_corr", "market_cap", "div_liq_ebitda", "div_liq_patrim",
+                         "pl_fut"))
         if yf_needed:
             yf_f = _from_yfinance(ticker)
             for a in ("pl", "pvp", "dy", "roe", "roic", "mrg_liq", "ev_ebitda",
                       "div_liq_ebitda", "div_liq_patrim", "div_patrim", "liq_corr",
-                      "cresc_5a", "market_cap", "lpa", "payout_ratio"):
+                      "cresc_5a", "market_cap", "lpa", "payout_ratio", "pl_fut"):
                 if pd.isna(getattr(f, a)) and pd.notna(getattr(yf_f, a)):
                     setattr(f, a, getattr(yf_f, a))
             if not f.setor and yf_f.setor:
@@ -450,3 +453,61 @@ def dividends_no_cut(px, years: int = 5, tol: float = 0.20):
         return cortes == 0
     except Exception:
         return None
+
+
+def price_stats(px) -> dict:
+    """Estatísticas técnicas do histórico: mínima/máxima 1 ano, distância da mínima 52s e
+    da média de 100 dias (com sinal: + acima / − abaixo)."""
+    out = {}
+    try:
+        close = px["Close"].dropna()
+        if len(close) < 20:
+            return out
+        c = float(close.iloc[-1])
+        w = close.iloc[-252:]                      # ~1 ano de pregões
+        low52, high52 = float(w.min()), float(w.max())
+        out["min_52s"] = round(low52, 2)
+        out["max_52s"] = round(high52, 2)
+        out["dist_min52"] = round((c / low52 - 1) * 100, 1) if low52 > 0 else float("nan")
+        out["dist_max52"] = round((c / high52 - 1) * 100, 1) if high52 > 0 else float("nan")
+        if len(close) >= 100:
+            mm100 = float(close.rolling(100).mean().iloc[-1])
+            out["dist_mm100"] = round((c / mm100 - 1) * 100, 1) if mm100 > 0 else float("nan")
+    except Exception:
+        pass
+    return out
+
+
+def get_ibov_close(period: str = "2y"):
+    """Fechamentos diários do Ibovespa (^BVSP) para cálculo de beta/correlação. None em falha."""
+    try:
+        import yfinance as yf
+        h = yf.Ticker("^BVSP").history(period=period, auto_adjust=True)
+        s = h["Close"].dropna()
+        s.index = s.index.tz_localize(None) if getattr(s.index, "tz", None) else s.index
+        return s if len(s) else None
+    except Exception:
+        return None
+
+
+def beta_corr(px, ibov_close, window: int = 252):
+    """(beta, correlação) dos retornos diários da ação vs Ibovespa na janela (~1 ano).
+    beta = cov(ação, ibov)/var(ibov); correlação de Pearson. (nan, nan) se dados insuficientes."""
+    try:
+        if px is None or ibov_close is None:
+            return float("nan"), float("nan")
+        s = px["Close"].copy()
+        s.index = s.index.tz_localize(None) if getattr(s.index, "tz", None) else s.index
+        rs = s.pct_change()
+        rm = ibov_close.pct_change()
+        j = pd.concat([rs, rm], axis=1, join="inner").dropna()
+        if len(j) < 60:
+            return float("nan"), float("nan")
+        j = j.iloc[-window:]
+        sv, mv = j.iloc[:, 0], j.iloc[:, 1]
+        var = float(mv.var())
+        beta = float(sv.cov(mv) / var) if var > 0 else float("nan")
+        corr = float(sv.corr(mv))
+        return round(beta, 2), round(corr, 2)
+    except Exception:
+        return float("nan"), float("nan")

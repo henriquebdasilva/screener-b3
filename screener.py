@@ -61,12 +61,17 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     from datafeed import (get_selic, get_insider_sells, avg_annual_dy,
                           listed_years, paid_dividends_ge, get_net_income_history,
-                          dividends_no_cut, avg_payout)
+                          dividends_no_cut, avg_payout, price_stats, beta_corr,
+                          get_ibov_close)
     selic = get_selic()
     print(f"Universo: {len(items)} tickers ({universe}). Selic usada: {selic:.2f}%")
 
     funds, breaks, origem, mcap, insider, avg_dy = [], {}, {}, {}, {}, {}
     listed_y, div_ge5, profit_hist, div_nocut, payout_med = {}, {}, {}, {}, {}
+    pstats, risco = {}, {}
+    ibov_close = get_ibov_close()                # p/ beta e correlação com o Ibovespa
+    if ibov_close is None:
+        print("[risco] Ibovespa (^BVSP) indisponível — beta/correlação ficarão n/d.")
     for i, (tk, orig) in enumerate(items, 1):
         origem[tk] = "+".join(orig)
         try:
@@ -89,6 +94,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             listed_y[tk] = listed_years(px)
             div_ge5[tk] = paid_dividends_ge(px, 5, 5.0)
             div_nocut[tk] = dividends_no_cut(px, 5, 0.20)
+            pstats[tk] = price_stats(px)
+            b, cr = beta_corr(px, ibov_close)
+            risco[tk] = {"beta": b, "corr_ibov": cr}
         except Exception as e:
             print(f"  [preço] {tk}: {e}")
         try:
@@ -141,6 +149,11 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         for dv, pl in zip(df.get("dy_div", pd.Series(index=df.index)),
                           df.get("pl", pd.Series(index=df.index)))
     ]
+    # métricas técnicas / de risco por papel
+    for _c in ("min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100"):
+        df[_c] = [pstats.get(t, {}).get(_c, float("nan")) for t in df.index]
+    df["beta"] = [risco.get(t, {}).get("beta", float("nan")) for t in df.index]
+    df["corr_ibov"] = [risco.get(t, {}).get("corr_ibov", float("nan")) for t in df.index]
 
     chk_rows, ceil_rows = {}, {}
     # múltiplo-alvo EV/EBITDA = mediana do setor (não-financeiras), limitado a [3, 15];
@@ -398,7 +411,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "alavancagem_ok", "div_liq_patrim", "nde_ok",
             "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roic", "mrg_liq",
             "ev_ebitda", "div_liq_ebitda",
-            "liq_corr", "div_patrim", "peg", "payout", "cresc_5a", "close",
+            "liq_corr", "div_patrim", "peg", "payout", "cresc_5a", "pl_fut",
+            "min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
+            "beta", "corr_ibov", "close",
             "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_projetivo",
             "teto_graham_selic", "teto_mult_ebitda",
@@ -416,7 +431,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     # medianas por setor (universo do dia) dos indicadores exibidos no e-mail
     _ind_cols = ["pl", "pvp", "peg", "ev_ebitda", "div_liq_ebitda", "div_liq_patrim",
-                 "roe", "roic", "payout", "mrg_liq", "liq_corr", "cresc_5a"]
+                 "roe", "roic", "payout", "mrg_liq", "liq_corr", "cresc_5a", "pl_fut"]
     setor_medians = {}
     for setor, g in df.groupby(df["setor"].fillna("")):
         setor_medians[str(setor)] = {c: float(g[c].median(skipna=True))

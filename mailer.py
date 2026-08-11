@@ -267,8 +267,41 @@ _IND_METRICS = [
     ("roe", "ROE", "hi", True), ("roic", "ROIC", "hi", True),
     ("payout", "Pay.", None, True),           # payout é não-monotônico -> sem cor
     ("mrg_liq", "Mrg", "hi", True), ("liq_corr", "Liq", "hi", False),
-    ("cresc_5a", "Cresc", "hi", True),
+    ("cresc_5a", "Cresc", "hi", True), ("pl_fut", "P/L fut", "lo", False),
 ]
+
+
+def _risco_table(df: pd.DataFrame) -> str:
+    """Tabela técnica/risco: mínima e máxima de 1 ano, distância da mínima 52s, posição vs
+    MM100 (acima/abaixo), beta e correlação com o Ibovespa."""
+    def cell(v, pct=False, sign=False):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return "<td style='text-align:right;color:#9ca3af'>—</td>"
+        if pct:
+            cor = "#16a34a" if (sign and float(v) >= 0) else ("#dc2626" if sign else "")
+            s = f"{float(v):+.1f}%" if sign else f"{float(v):.1f}%"
+            return f"<td style='text-align:right;color:{cor}'>{s}</td>" if cor \
+                else f"<td style='text-align:right'>{s}</td>"
+        return f"<td style='text-align:right'>{float(v):.2f}</td>"
+
+    head = ("<tr><th>Ativo</th><th style='text-align:right'>Mín 1a</th>"
+            "<th style='text-align:right'>Máx 1a</th><th style='text-align:right'>vs Mín</th>"
+            "<th style='text-align:right'>vs MM100</th><th style='text-align:right'>Beta</th>"
+            "<th style='text-align:right'>Corr.Ibov</th></tr>")
+    linhas = []
+    for tk, r in df.iterrows():
+        linhas.append(
+            f"<tr><td><b>{tk}</b></td>{cell(r.get('min_52s'))}{cell(r.get('max_52s'))}"
+            f"{cell(r.get('dist_min52'), pct=True)}"
+            f"{cell(r.get('dist_mm100'), pct=True, sign=True)}"
+            f"{cell(r.get('beta'))}{cell(r.get('corr_ibov'))}</tr>")
+    leg = ('<p class="sub" style="margin:4px 0 0">Mín/Máx 1a em R$; vs Mín = distância da '
+           'mínima de 52 semanas; vs MM100 = posição vs média de 100 dias '
+           '(<span style="color:#16a34a">+ acima</span> / '
+           '<span style="color:#dc2626">− abaixo</span>); Beta e correlação vs Ibovespa '
+           '(retornos diários, ~1 ano).</p>')
+    return (f'<h3 style="{_H3}">Preço &amp; risco</h3>'
+            f'<div class="ind"><table>{head}{"".join(linhas)}</table></div>{leg}')
 
 
 def _ind_cell(val, med, direc, pct) -> str:
@@ -323,6 +356,7 @@ def _group_block(df: pd.DataFrame, title: str) -> str:
                 f'<p class="empty">Nenhum papel neste grupo hoje.</p>')
     parts = [_main_table(df, title)]
     parts.append(_ind_table(df))
+    parts.append(_risco_table(df))
     parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
     if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
         parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
@@ -339,7 +373,7 @@ def _defensivas_section(df: pd.DataFrame, thr: float) -> str:
            'saúde, consumo básico, telecom e financeiro.</p>')
     rows = "".join(_fmt_row(r) for _, r in df.iterrows())
     return (f'<h2 style="{_H2}">{title} — {len(df)} papéis</h2>{sub}'
-            f'<table>{_main_head()}{rows}</table>{_ind_table(df)}')
+            f'<table>{_main_head()}{rows}</table>{_ind_table(df)}{_risco_table(df)}')
 
 
 def _posicao_table(df: pd.DataFrame) -> str:
@@ -374,6 +408,7 @@ def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False) 
         parts.append(_posicao_table(df))
     parts.append(f'<table>{_main_head()}{"".join(_fmt_row(r) for _, r in df.iterrows())}</table>')
     parts.append(_ind_table(df))
+    parts.append(_risco_table(df))
     parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
     if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
         parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
