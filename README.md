@@ -365,3 +365,5 @@ regenerar sem esperar o dia seguinte:
 **Graham ajustado à Selic.** LPA × (8,5 + 2g) × 4,4 ÷ Selic — a fórmula de Graham com crescimento, sensível ao nível de juros (com Selic alta, o teto cai). g limitado a 15%. Coluna Grah.Selic. Não-financeiras.
 
 **Múltiplo-alvo EV/EBITDA.** Preço a que a ação negociaria no EV/EBITDA-alvo (mediana do setor, limitada a 3–15×): preço × (alvo − DL/EBITDA) ÷ (EV/EBITDA − DL/EBITDA). Âncora de valuation relativo. Coluna Múlt.EV. Não-financeiras (dependem de EV/EBITDA e dívida líquida do yfinance).
+
+**Padrões gráficos adicionais (candidatos).** Além de rompimento e pivô, o app detecta, de forma conservadora e só fora de tendência de baixa: **fundo duplo** (W, dois fundos parecidos + rompimento do pescoço), **fundo triplo** (três fundos + rompimento da resistência) e **bandeira de alta** (mastro forte + consolidação curta + rompimento). Só disparam quando o padrão **se confirma** (rompe o nível), e vêm rotulados como 'candidato' — detecção automática de padrão tem erro; trate como ponto de partida, não sinal definitivo. Desligue com `detect_patterns=False`.
