@@ -144,6 +144,10 @@ class Consistency:
     divida_menor_patrim: object = None     # Dív/Patrim < 1 (n/a p/ financeira)
     cresc_receita_5a: object = None
     cresc_lucro_5a: object = None          # best-effort
+    ebitda_cresc_5a: object = None         # EBITDA crescente (best-effort)
+    margem_cresc_5a: object = None         # margem líquida crescente (best-effort)
+    roe_cresc_5a: object = None            # ROE crescente (best-effort)
+    roic_cresc_5a: object = None           # ROIC crescente (best-effort; raramente disponível)
     n_ok: int = 0
     n_aplic: int = 0
     score: float = math.nan                # 0-100 = % dos aplicáveis atendidos
@@ -153,7 +157,10 @@ class Consistency:
 
 
 def consistency(row, listed_y, div_ge5, ni_annual, ni_quarterly,
-                is_financial: bool = False, div_no_cut=None) -> Consistency:
+                is_financial: bool = False, div_no_cut=None,
+                ebitda_by_year=None, margem_by_year=None, roe_by_year=None,
+                roic_by_year=None) -> Consistency:
+    from datafeed import trend_up
     c = Consistency()
     ly = _num(listed_y)
     c.mais_5a_bolsa = None if ly is None else bool(ly >= 5)
@@ -179,9 +186,20 @@ def consistency(row, listed_y, div_ge5, ni_annual, ni_quarterly,
     if ni_quarterly and len(ni_quarterly) >= 20:
         c.lucro_20t = bool(all(x > 0 for x in ni_quarterly[:20]))
 
+    # tendências crescentes em 5 anos (best-effort; None = sem dados suficientes)
+    if ebitda_by_year:
+        c.ebitda_cresc_5a = bool(trend_up(ebitda_by_year))
+    if margem_by_year:
+        c.margem_cresc_5a = bool(trend_up(margem_by_year))
+    if roe_by_year:
+        c.roe_cresc_5a = bool(trend_up(roe_by_year))
+    if roic_by_year:
+        c.roic_cresc_5a = bool(trend_up(roic_by_year))
+
     flags = [c.mais_5a_bolsa, c.sem_prejuizo_anual, c.lucro_20t, c.div_ge5_5a,
              c.div_sem_corte, c.roe_ge_10, c.divida_menor_patrim,
-             c.cresc_receita_5a, c.cresc_lucro_5a]
+             c.cresc_receita_5a, c.cresc_lucro_5a, c.ebitda_cresc_5a,
+             c.margem_cresc_5a, c.roe_cresc_5a, c.roic_cresc_5a]
     ap = [f for f in flags if f is not None]
     c.n_aplic = len(ap)
     c.n_ok = sum(1 for f in ap if f)

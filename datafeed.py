@@ -38,6 +38,10 @@ class Fundamentals:
     div_liq_patrim: float = math.nan  # Dívida líquida/Patrimônio (derivada do yfinance)
     lpa: float = math.nan             # lucro por ação (trailing EPS)
     pl_fut: float = math.nan          # P/L futuro estimado (forward P/E, yfinance)
+    roa: float = math.nan             # retorno sobre ativos (returnOnAssets, %)
+    liq_geral: float = math.nan       # liquidez geral (best-effort, do balanço)
+    grau_endiv: float = math.nan      # grau de endividamento: Passivo/Ativo (%)
+    indep_fin: float = math.nan       # independência financeira: PL/Ativo (%)
     payout_ratio: float = math.nan    # payout real (0-1), quando disponível
     liq_corr: float = math.nan      # Liquidez corrente
     cresc_5a: float = math.nan      # Crescimento receita 5a (%) -> proxy p/ PEG
@@ -166,6 +170,8 @@ def _from_yfinance(ticker: str) -> Fundamentals:
     f.market_cap = g("marketCap")
     f.lpa = g("trailingEps", "epsTrailingTwelveMonths")
     f.pl_fut = g("forwardPE")
+    roa = g("returnOnAssets")
+    f.roa = roa * 100 if (pd.notna(roa) and abs(roa) < 5) else roa   # fração -> %
     pr = g("payoutRatio")
     f.payout_ratio = pr if (pd.notna(pr) and 0 < pr <= 2) else math.nan
     # Dívida líquida a partir do balanço (yfinance): (dívida total − caixa)
@@ -206,7 +212,7 @@ def get_fundamentals(ticker: str, sector_hint: str = "") -> Fundamentals:
             yf_f = _from_yfinance(ticker)
             for a in ("pl", "pvp", "dy", "roe", "roic", "mrg_liq", "ev_ebitda",
                       "div_liq_ebitda", "div_liq_patrim", "div_patrim", "liq_corr",
-                      "cresc_5a", "market_cap", "lpa", "payout_ratio", "pl_fut"):
+                      "cresc_5a", "market_cap", "lpa", "payout_ratio", "pl_fut", "roa"):
                 if pd.isna(getattr(f, a)) and pd.notna(getattr(yf_f, a)):
                     setattr(f, a, getattr(yf_f, a))
             if not f.setor and yf_f.setor:
@@ -367,46 +373,115 @@ def paid_dividends_ge(px, years: int = 5, thr_pct: float = 5.0):
     return bool((s >= thr_pct).all())
 
 
-def get_net_income_history(ticker: str):
-    """Best-effort: (lucro ANUAL, lucro TRIMESTRAL, {ano: LPA}) do yfinance.
+def _row_by_year(st, keys) -> dict:
+    """Extrai {ano: valor} da 1ª linha existente entre `keys` de um demonstrativo yfinance."""
+    out = {}
+    for key in keys:
+        if key in st.index:
+            for col, val in st.loc[key].items():
+                yr = getattr(col, "year", None)
+                if yr and pd.notna(val):
+                    try:
+                        out[int(yr)] = float(val)
+                    except Exception:
+                        pass
+            break
+    return out
 
-    Cobertura da B3 é irregular -> frequentemente vazio. Retorna ([], [], {}) em falha.
-    Desligue com env PROFIT_HISTORY=0.
-    """
+
+def get_net_income_history(ticker: str):
+    """Best-effort do income statement (uma chamada): retorna
+       (lucro ANUAL, lucro TRIMESTRAL, {ano:LPA}, {ano:EBITDA}, {ano:margem_liq%}).
+    Cobertura da B3 é irregular. Desligue com env PROFIT_HISTORY=0."""
     import os
     if os.getenv("PROFIT_HISTORY", "1") == "0":
-        return [], [], {}
-    annual, quarterly, eps_by_year = [], [], {}
+        return [], [], {}, {}, {}
+    annual, quarterly, eps_by_year, ebitda_by_year, margem_by_year = [], [], {}, {}, {}
     try:
         import yfinance as yf
         t = yf.Ticker(to_yahoo(ticker))
         for attr, dest in (("income_stmt", annual), ("quarterly_income_stmt", quarterly)):
             try:
                 st = getattr(t, attr)
-                if st is not None and not st.empty:
-                    for key in ("Net Income", "NetIncome",
-                                "Net Income Common Stockholders"):
-                        if key in st.index:
-                            vals = [float(x) for x in st.loc[key].tolist()
-                                    if pd.notna(x)]
-                            dest.extend(vals)          # ordem: mais recente -> antigo
-                            break
-                    if attr == "income_stmt":          # LPA anual por ano (mesma chamada)
-                        for key in ("Diluted EPS", "Basic EPS"):
-                            if key in st.index:
-                                for col, val in st.loc[key].items():
-                                    yr = getattr(col, "year", None)
-                                    if yr and pd.notna(val):
-                                        try:
-                                            eps_by_year[int(yr)] = float(val)
-                                        except Exception:
-                                            pass
-                                break
+                if st is None or st.empty:
+                    continue
+                for key in ("Net Income", "NetIncome", "Net Income Common Stockholders"):
+                    if key in st.index:
+                        dest.extend([float(x) for x in st.loc[key].tolist() if pd.notna(x)])
+                        break
+                if attr == "income_stmt":
+                    eps_by_year.update(_row_by_year(st, ("Diluted EPS", "Basic EPS")))
+                    ebitda_by_year.update(_row_by_year(st, ("EBITDA", "Normalized EBITDA")))
+                    ni_y = _row_by_year(st, ("Net Income", "Net Income Common Stockholders"))
+                    rev_y = _row_by_year(st, ("Total Revenue", "Operating Revenue"))
+                    for yr, rev in rev_y.items():           # margem líquida anual (%)
+                        if yr in ni_y and rev and rev != 0:
+                            margem_by_year[yr] = ni_y[yr] / rev * 100
             except Exception:
                 pass
     except Exception:
         pass
-    return annual, quarterly, eps_by_year
+    return annual, quarterly, eps_by_year, ebitda_by_year, margem_by_year
+
+
+def get_balance_metrics(ticker: str) -> dict:
+    """Best-effort do balanço (uma chamada). Retorna liquidez geral, grau de endividamento
+    (Passivo/Ativo %), independência financeira (PL/Ativo %) e {ano: patrimônio} p/ ROE.
+    Desligue com env BALANCE=0."""
+    import os
+    out = {"liq_geral": math.nan, "grau_endiv": math.nan, "indep_fin": math.nan,
+           "equity_by_year": {}}
+    if os.getenv("BALANCE", "1") == "0":
+        return out
+    try:
+        import yfinance as yf
+        st = yf.Ticker(to_yahoo(ticker)).balance_sheet
+        if st is None or st.empty:
+            return out
+        col = st.columns[0]                                  # ano mais recente
+        def v(*keys):
+            for k in keys:
+                if k in st.index and pd.notna(st.loc[k, col]):
+                    return float(st.loc[k, col])
+            return math.nan
+        ativo = v("Total Assets")
+        passivo = v("Total Liabilities Net Minority Interest", "Total Liabilities")
+        pl = v("Stockholders Equity", "Total Equity Gross Minority Interest",
+               "Common Stock Equity")
+        ac = v("Current Assets", "Total Current Assets")
+        pc = v("Current Liabilities", "Total Current Liabilities")
+        if pd.notna(ativo) and ativo > 0:
+            if pd.notna(passivo):
+                out["grau_endiv"] = passivo / ativo * 100
+            if pd.notna(pl):
+                out["indep_fin"] = pl / ativo * 100
+        # liquidez geral ≈ (Ativo Circulante + Realizável LP) / Passivo total
+        rlp = v("Other Non Current Assets")                  # aproxima o realizável LP
+        if pd.notna(ac) and pd.notna(passivo) and passivo > 0:
+            num = ac + (rlp if pd.notna(rlp) else 0.0)
+            out["liq_geral"] = num / passivo
+        out["equity_by_year"] = _row_by_year(
+            st, ("Stockholders Equity", "Common Stock Equity"))
+    except Exception:
+        pass
+    return out
+
+
+def trend_up(by_year: dict, min_years: int = 4, tol: float = 0.0) -> bool:
+    """True se a série (por ano) é predominantemente CRESCENTE: pelo menos min_years anos e
+    a maioria das variações ano-a-ano positivas, com o último > primeiro (margem tol)."""
+    try:
+        if not by_year:
+            return False
+        anos = sorted(by_year.keys())
+        vals = [by_year[a] for a in anos]
+        if len(vals) < min_years:
+            return False
+        subiu = sum(1 for i in range(1, len(vals)) if vals[i] > vals[i - 1])
+        desceu = sum(1 for i in range(1, len(vals)) if vals[i] < vals[i - 1])
+        return (vals[-1] > vals[0] * (1 + tol)) and (subiu > desceu)
+    except Exception:
+        return False
 
 
 def avg_payout(eps_by_year: dict, px, years: int = 5):

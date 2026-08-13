@@ -62,13 +62,13 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     from datafeed import (get_selic, get_insider_sells, avg_annual_dy,
                           listed_years, paid_dividends_ge, get_net_income_history,
                           dividends_no_cut, avg_payout, price_stats, beta_corr,
-                          get_ibov_close)
+                          get_ibov_close, get_balance_metrics)
     selic = get_selic()
     print(f"Universo: {len(items)} tickers ({universe}). Selic usada: {selic:.2f}%")
 
     funds, breaks, origem, mcap, insider, avg_dy = [], {}, {}, {}, {}, {}
     listed_y, div_ge5, profit_hist, div_nocut, payout_med = {}, {}, {}, {}, {}
-    pstats, risco = {}, {}
+    pstats, risco, growth_hist, balanco = {}, {}, {}, {}
     ibov_close = get_ibov_close()                # p/ beta e correlação com o Ibovespa
     if ibov_close is None:
         print("[risco] Ibovespa (^BVSP) indisponível — beta/correlação ficarão n/d.")
@@ -104,11 +104,30 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         except Exception:
             insider[tk] = None
         try:
-            ni_a, ni_q, eps_year = get_net_income_history(tk)   # (anual, trimestral, {ano:LPA})
+            ni_a, ni_q, eps_year, ebitda_year, margem_year = get_net_income_history(tk)
             profit_hist[tk] = (ni_a, ni_q)
             payout_med[tk] = avg_payout(eps_year, px)           # payout médio (5a), best-effort
+            growth_hist[tk] = {"ebitda": ebitda_year, "margem": margem_year}
         except Exception:
             profit_hist[tk] = ([], [])
+            growth_hist[tk] = {}
+        try:
+            bm = get_balance_metrics(tk)
+            balanco[tk] = bm
+            # ROE por ano = lucro anual / patrimônio anual (best-effort)
+            eq = bm.get("equity_by_year") or {}
+            ni_y = {}
+            if ni_a:
+                # alinha os lucros anuais aos anos do patrimônio (mesma ordem recente->antigo)
+                anos = sorted(eq.keys(), reverse=True)
+                for k, yr in enumerate(anos):
+                    if k < len(ni_a):
+                        ni_y[yr] = ni_a[k]
+            roe_year = {yr: (ni_y[yr] / eq[yr] * 100) for yr in eq
+                        if yr in ni_y and eq[yr] and eq[yr] > 0}
+            growth_hist.setdefault(tk, {})["roe"] = roe_year
+        except Exception:
+            balanco[tk] = {}
         if i % 10 == 0:
             print(f"  ...{i}/{len(items)}")
         time.sleep(sleep)
@@ -154,6 +173,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         df[_c] = [pstats.get(t, {}).get(_c, float("nan")) for t in df.index]
     df["beta"] = [risco.get(t, {}).get("beta", float("nan")) for t in df.index]
     df["corr_ibov"] = [risco.get(t, {}).get("corr_ibov", float("nan")) for t in df.index]
+    for _c in ("liq_geral", "grau_endiv", "indep_fin"):
+        df[_c] = [balanco.get(t, {}).get(_c, float("nan")) for t in df.index]
 
     chk_rows, ceil_rows = {}, {}
     # múltiplo-alvo EV/EBITDA = mediana do setor (não-financeiras), limitado a [3, 15];
@@ -275,9 +296,12 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     cons_rows = {}
     for tk in df.index:
         ni = profit_hist.get(tk, ([], []))
+        gh = growth_hist.get(tk, {})
         cc2 = _consistency(df.loc[tk], listed_y.get(tk), div_ge5.get(tk),
                            ni[0], ni[1], is_financial=fin_map.get(tk, False),
-                           div_no_cut=div_nocut.get(tk))
+                           div_no_cut=div_nocut.get(tk),
+                           ebitda_by_year=gh.get("ebitda"), margem_by_year=gh.get("margem"),
+                           roe_by_year=gh.get("roe"))
         cons_rows[tk] = cc2.as_dict()
     df = df.join(pd.DataFrame(cons_rows).T.rename(columns={"score": "consistencia"}))
     df["investment_base"] = df["investment"]
@@ -412,6 +436,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roic", "mrg_liq",
             "ev_ebitda", "div_liq_ebitda",
             "liq_corr", "div_patrim", "peg", "payout", "cresc_5a", "pl_fut",
+            "roa", "liq_geral", "grau_endiv", "indep_fin",
             "min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
             "beta", "corr_ibov", "close",
             "teto_bazin", "teto_gordon",
@@ -431,7 +456,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     # medianas por setor (universo do dia) dos indicadores exibidos no e-mail
     _ind_cols = ["pl", "pvp", "peg", "ev_ebitda", "div_liq_ebitda", "div_liq_patrim",
-                 "roe", "roic", "payout", "mrg_liq", "liq_corr", "cresc_5a", "pl_fut"]
+                 "roe", "roic", "payout", "mrg_liq", "liq_corr", "cresc_5a", "pl_fut",
+                 "roa", "liq_geral", "grau_endiv", "indep_fin"]
     setor_medians = {}
     for setor, g in df.groupby(df["setor"].fillna("")):
         setor_medians[str(setor)] = {c: float(g[c].median(skipna=True))
