@@ -141,6 +141,13 @@ def fetch_macro(selic_pct: float = None) -> dict:
     m["focus_selic"] = focus_anual("Selic", ano)
     m["focus_cambio"] = focus_anual("Câmbio", ano)
     m["focus_pib"] = focus_anual("PIB Total", ano)
+
+    try:                                                 # fluxo estrangeiro (best-effort B3)
+        from fluxo import fetch_fluxo_estrangeiro
+        fx = fetch_fluxo_estrangeiro()
+        m["fluxo_estrangeiro"] = fx                      # dict ou None
+    except Exception:
+        m["fluxo_estrangeiro"] = None
     return m
 
 
@@ -283,6 +290,20 @@ def render_panel(macro: dict, regime: dict) -> str:
     rows.append(_row("Dívida bruta (DBGG)",
                      f"{dbgg:.1f}% PIB" if dbgg is not None else "n/d",
                      _fmt_d(g("dbgg").get("data")), ""))
+    fx = macro.get("fluxo_estrangeiro")
+    if fx and fx.get("dia") is not None:
+        dia = fx["dia"]
+        cor = "#16a34a" if dia >= 0 else "#dc2626"
+        extra_fx = ""
+        if fx.get("mes") is not None:
+            extra_fx = (f" · mês <span style='color:"
+                        f"{'#16a34a' if fx['mes'] >= 0 else '#dc2626'}'>"
+                        f"{fx['mes']:+,.0f}</span>")
+        rows.append(_row("Fluxo estrangeiro (B3)",
+                         f"<span style='color:{cor}'>{dia:+,.0f}</span> R$ mi{extra_fx}",
+                         _fmt_d(fx.get("data")), ""))
+    else:
+        rows.append(_row("Fluxo estrangeiro (B3)", "n/d", "", ""))
 
     sc = regime.get("score")
     if sc is not None:
