@@ -370,7 +370,8 @@ def _main_table(df: pd.DataFrame, title: str) -> str:
 
 
 def _group_block(df: pd.DataFrame, title: str, show_ind: bool = True,
-                 show_risco: bool = True, show_agenda: bool = True) -> str:
+                 show_risco: bool = True, show_agenda: bool = True,
+                 show_teto: bool = True) -> str:
     if df is None or df.empty:
         return (f'<h2 style="{_H2}">{title}</h2>'
                 f'<p class="empty">Nenhum papel neste grupo hoje.</p>')
@@ -379,7 +380,8 @@ def _group_block(df: pd.DataFrame, title: str, show_ind: bool = True,
         parts.append(_ind_table(df))
     if show_risco:
         parts.append(_risco_table(df))
-    parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
+    if show_teto:
+        parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
     if show_agenda and ("prox_resultado" in df.columns or "ex_dividendo" in df.columns):
         parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
     return "".join(parts)
@@ -422,7 +424,8 @@ def _posicao_table(df: pd.DataFrame) -> str:
 
 def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False,
                  show_ind: bool = True, show_risco: bool = True,
-                 show_agenda: bool = True, tese_max: int = 0) -> str:
+                 show_agenda: bool = True, tese_max: int = 0,
+                 show_teto: bool = True) -> str:
     if df is None or df.empty:
         return (f'<h2 style="{_H2}">{title}</h2>'
                 f'<p class="empty">Nenhum papel — crie/edite o arquivo .txt correspondente.</p>')
@@ -435,7 +438,8 @@ def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False,
         parts.append(_ind_table(df))
     if show_risco:
         parts.append(_risco_table(df))
-    parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
+    if show_teto:
+        parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
     if show_agenda and ("prox_resultado" in df.columns or "ex_dividendo" in df.columns):
         parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
     parts.append(_teses_block(df, tese_max=tese_max))          # IA para todos deste bloco
@@ -460,7 +464,7 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
     suf = f" ({group_pct}% de maior score)" if group_pct else ""
 
     # monta o corpo com verbosidade controlável (para caber no limite de ~102 KB do Gmail)
-    def assemble(show_ind, show_risco, show_agenda, tese_max=0):
+    def assemble(show_ind, show_risco, show_agenda, tese_max=0, show_teto=True):
         watch = ""
         if carteira_df is not None and not carteira_df.empty:
             watch += _watch_block(carteira_df, "Minha carteira",
@@ -468,13 +472,14 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                                   "dados, preços-teto e análise por IA — independentemente dos "
                                   "filtros.", posicao=True, show_ind=show_ind,
                                   show_risco=show_risco, show_agenda=show_agenda,
-                                  tese_max=tese_max)
+                                  tese_max=tese_max, show_teto=show_teto)
         if wishlist_df is not None and not wishlist_df.empty:
             watch += _watch_block(wishlist_df, "Wishlist",
                                  "Papéis que você quer acompanhar (arquivo wishlist.txt), com "
                                  "dados, preços-teto e análise por IA — mesmo reprovados no "
                                  "corte.", show_ind=show_ind, show_risco=show_risco,
-                                 show_agenda=show_agenda, tese_max=tese_max)
+                                 show_agenda=show_agenda, tese_max=tese_max,
+                                 show_teto=show_teto)
         if selecionados is None or selecionados.empty:
             return (topo + '<p class="empty">Nenhum papel passou no corte fundamentalista '
                     'hoje.</p>' + watch), 0
@@ -495,12 +500,14 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
         else:
             defensivas = selecionados.iloc[0:0]
         nota_trim = ""
-        if not (show_ind and show_risco and show_agenda):
+        if not (show_ind and show_risco and show_agenda and show_teto):
             faltando = []
             if not show_ind:
                 faltando.append("indicadores")
             if not show_risco:
                 faltando.append("preço &amp; risco")
+            if not show_teto:
+                faltando.append("preços-teto")
             if not show_agenda:
                 faltando.append("agenda")
             nota_trim = (f'<p class="sub" style="margin:8px 0 0">Para caber no e-mail, as '
@@ -508,8 +515,10 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                          f'detalhe completo está na <b>planilha anexa</b>.</p>')
         body = (
             topo + nota_trim
-            + _group_block(bova, f"BOVA11 · Ibovespa{suf}", show_ind, show_risco, show_agenda)
-            + _group_block(small, f"SMALL11 · Small Caps{suf}", show_ind, show_risco, show_agenda)
+            + _group_block(bova, f"BOVA11 · Ibovespa{suf}", show_ind, show_risco,
+                           show_agenda, show_teto)
+            + _group_block(small, f"SMALL11 · Small Caps{suf}", show_ind, show_risco,
+                           show_agenda, show_teto)
             + _defensivas_section(defensivas, defensive_cyc)
             + f'<p class="sub" style="margin:14px 0 0">{_TETO_NOTE}</p>'
             + _teses_block(selecionados, tese_max=tese_max)
@@ -517,15 +526,16 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
         )
         return body, n_graf
 
-    # tenta cheio; se passar do orçamento, remove tabelas opcionais progressivamente e, por
-    # último, trunca as teses de IA — garantindo caber no limite de ~102 KB do Gmail (margem).
-    budget = 96 * 1024
-    niveis = ((True, True, True, 0), (True, True, False, 0), (True, False, False, 0),
-              (False, False, False, 0), (False, False, False, 240),
-              (False, False, False, 120))
+    # tenta cheio; se passar do orçamento, corta na ordem: agenda -> trunca teses -> risco ->
+    # preços-teto -> indicadores. Fundamentos são os ÚLTIMOS a cair (tudo está na planilha).
+    budget = 100 * 1024
+    niveis = ((True, True, True, 0, True), (True, True, False, 0, True),
+              (True, True, False, 240, True), (True, True, False, 120, True),
+              (True, False, False, 120, True), (True, False, False, 120, False),
+              (False, False, False, 120, False))
     for nivel in niveis:
-        si, sr, sa, tmax = nivel
-        body, n_graf = assemble(si, sr, sa, tmax)
+        si, sr, sa, tmax, st = nivel
+        body, n_graf = assemble(si, sr, sa, tmax, st)
         html = _wrap(body, hoje, meta, n_graf)
         if len(html.encode("utf-8")) <= budget or nivel == niveis[-1]:
             return html
