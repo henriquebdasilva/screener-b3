@@ -73,6 +73,7 @@ td{padding:7px 8px;border-bottom:1px solid #e5e7eb}
 .ind table{font-size:11px}
 .ind th{padding:4px 5px}
 .ind td{padding:3px 5px}
+td.r,th.r{text-align:right}.g{color:#16a34a}.rd{color:#dc2626}.mut{color:#9ca3af}
 tr:nth-child(even) td{background:#f3f4f6}
 .tag{display:inline-block;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:700}
 .romp{background:#dcfce7;color:#166534}.piv{background:#fef9c3;color:#854d0e}
@@ -176,11 +177,13 @@ def _agenda_table(df: pd.DataFrame) -> str:
     return f"<table>{head}{''.join(rows)}</table>"
 
 
-def _teses_block(df: pd.DataFrame) -> str:
+def _teses_block(df: pd.DataFrame, tese_max: int = 0) -> str:
     itens = []
     for _, r in df.iterrows():
         t = str(r.get("tese_ia") or "").strip()
         if t:
+            if tese_max and len(t) > tese_max:
+                t = t[:tese_max].rsplit(" ", 1)[0] + "…"
             itens.append(f'<p style="margin:8px 0"><b>{r.name}</b> — {t}</p>')
     if not itens:
         return ""
@@ -276,21 +279,27 @@ def _risco_table(df: pd.DataFrame) -> str:
     mínima 52s (com sinal/cor), posição vs MM100 (acima/abaixo), beta e correlação c/ Ibov."""
     def cell(v, pct=False, sign=False):
         if v is None or (isinstance(v, float) and pd.isna(v)):
-            return "<td style='text-align:right;color:#9ca3af'>—</td>"
+            return "<td class='r mut'>—</td>"
         if pct:
-            cor = ""
+            cls = ""
             if sign:
-                cor = "#16a34a" if float(v) >= 0 else "#dc2626"
+                cls = "g" if float(v) >= 0 else "rd"
             s = f"{float(v):+.1f}%" if sign else f"{float(v):.1f}%"
-            return (f"<td style='text-align:right;color:{cor}'>{s}</td>" if cor
-                    else f"<td style='text-align:right'>{s}</td>")
-        return f"<td style='text-align:right'>{float(v):.2f}</td>"
+            return f"<td class='r {cls}'>{s}</td>" if cls else f"<td class='r'>{s}</td>"
+        return f"<td class='r'>{float(v):.2f}</td>"
 
-    head = ("<tr><th>Ativo</th><th style='text-align:right'>Preço</th>"
-            "<th style='text-align:right'>Mín 52s</th><th style='text-align:right'>Máx 52s</th>"
-            "<th style='text-align:right'>vs Min52</th>"
-            "<th style='text-align:right'>vs MM100</th><th style='text-align:right'>Beta</th>"
-            "<th style='text-align:right'>Corr.Ibov</th></tr>")
+    def num_sign(v):
+        """Número com sinal explícito e cor (verde + / vermelho −) — p/ beta e correlação."""
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return "<td class='r mut'>—</td>"
+        cls = "g" if float(v) >= 0 else "rd"
+        return f"<td class='r {cls}'>{float(v):+.2f}</td>"
+
+    head = ("<tr><th>Ativo</th><th class='r'>Preço</th>"
+            "<th class='r'>Mín 52s</th><th class='r'>Máx 52s</th>"
+            "<th class='r'>vs Min52</th>"
+            "<th class='r'>vs MM100</th><th class='r'>Beta</th>"
+            "<th class='r'>Corr.Ibov</th></tr>")
     linhas = []
     for tk, r in df.iterrows():
         linhas.append(
@@ -298,30 +307,32 @@ def _risco_table(df: pd.DataFrame) -> str:
             f"{cell(r.get('min_52s'))}{cell(r.get('max_52s'))}"
             f"{cell(r.get('dist_min52'), pct=True, sign=True)}"
             f"{cell(r.get('dist_mm100'), pct=True, sign=True)}"
-            f"{cell(r.get('beta'))}{cell(r.get('corr_ibov'))}</tr>")
+            f"{num_sign(r.get('beta'))}{num_sign(r.get('corr_ibov'))}</tr>")
     leg = ('<p class="sub" style="margin:4px 0 0">Preço, Mín 52s e Máx 52s em R$ (mínima e '
            'máxima de 52 semanas). vs Min52 = distância da mínima de 52 semanas; vs MM100 = '
            'posição vs média de 100 dias. <span style="color:#16a34a">Verde/+</span> acima, '
            '<span style="color:#dc2626">vermelho/−</span> abaixo. Beta e correlação vs '
-           'Ibovespa (retornos diários, ~1 ano).</p>')
+           'Ibovespa (retornos diários, ~1 ano; <span style="color:#16a34a">+</span> na '
+           'mesma direção do índice, <span style="color:#dc2626">−</span> na direção '
+           'oposta).</p>')
     return (f'<h3 style="{_H3}">Preço &amp; risco</h3>'
             f'<div class="ind"><table>{head}{"".join(linhas)}</table></div>{leg}')
 
 
 def _ind_cell(val, med, direc, pct) -> str:
     if val is None or (isinstance(val, float) and pd.isna(val)):
-        return "<td style='text-align:right;color:#9ca3af'>—</td>"
+        return "<td class='r mut'>—</td>"
     txt = f"{float(val):.1f}%" if pct else f"{float(val):.2f}"
-    cor = ""
+    cls = ""
     if direc and med is not None and not (isinstance(med, float) and pd.isna(med)):
         melhor = (val > med) if direc == "hi" else (val < med)
-        cor = "color:#16a34a" if melhor else "color:#dc2626"
-    return f"<td style='text-align:right;{cor}'>{txt}</td>"
+        cls = "g" if melhor else "rd"
+    return f"<td class='r {cls}'>{txt}</td>" if cls else f"<td class='r'>{txt}</td>"
 
 
 def _ind_table(df: pd.DataFrame) -> str:
     head = ("<tr><th>Ativo</th>"
-            + "".join(f"<th style='text-align:right'>{lbl}</th>"
+            + "".join(f"<th class='r'>{lbl}</th>"
                       for _, lbl, _, _ in _IND_METRICS) + "</tr>")
     linhas = []
     for tk, r in df.iterrows():
@@ -354,15 +365,18 @@ def _main_table(df: pd.DataFrame, title: str) -> str:
             f'<table>{_main_head()}{rows}</table>')
 
 
-def _group_block(df: pd.DataFrame, title: str) -> str:
+def _group_block(df: pd.DataFrame, title: str, show_ind: bool = True,
+                 show_risco: bool = True, show_agenda: bool = True) -> str:
     if df is None or df.empty:
         return (f'<h2 style="{_H2}">{title}</h2>'
                 f'<p class="empty">Nenhum papel neste grupo hoje.</p>')
     parts = [_main_table(df, title)]
-    parts.append(_ind_table(df))
-    parts.append(_risco_table(df))
+    if show_ind:
+        parts.append(_ind_table(df))
+    if show_risco:
+        parts.append(_risco_table(df))
     parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
-    if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
+    if show_agenda and ("prox_resultado" in df.columns or "ex_dividendo" in df.columns):
         parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
     return "".join(parts)
 
@@ -373,11 +387,11 @@ def _defensivas_section(df: pd.DataFrame, thr: float) -> str:
         return (f'<h2 style="{_H2}">{title}</h2>'
                 f'<p class="empty">Nenhuma selecionada nesse critério hoje.</p>')
     sub = ('<p class="sub" style="margin:0 0 8px">Recorte das selecionadas (BOVA11 + SMALL11 '
-           'juntas) em setores menos sensíveis ao ciclo econômico — utilities, saneamento, '
-           'saúde, consumo básico, telecom e financeiro.</p>')
+           'juntas) em setores menos sensíveis ao ciclo econômico. Indicadores e preços-teto '
+           'destes papéis estão nas seções BOVA11/SMALL11 acima.</p>')
     rows = "".join(_fmt_row(r) for _, r in df.iterrows())
     return (f'<h2 style="{_H2}">{title} — {len(df)} papéis</h2>{sub}'
-            f'<table>{_main_head()}{rows}</table>{_ind_table(df)}{_risco_table(df)}')
+            f'<table>{_main_head()}{rows}</table>')
 
 
 def _posicao_table(df: pd.DataFrame) -> str:
@@ -402,7 +416,9 @@ def _posicao_table(df: pd.DataFrame) -> str:
     return (f'<h3 style="{_H3}">Posição</h3><table>{head}{"".join(linhas)}</table>')
 
 
-def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False) -> str:
+def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False,
+                 show_ind: bool = True, show_risco: bool = True,
+                 show_agenda: bool = True, tese_max: int = 0) -> str:
     if df is None or df.empty:
         return (f'<h2 style="{_H2}">{title}</h2>'
                 f'<p class="empty">Nenhum papel — crie/edite o arquivo .txt correspondente.</p>')
@@ -411,12 +427,14 @@ def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False) 
     if posicao:
         parts.append(_posicao_table(df))
     parts.append(f'<table>{_main_head()}{"".join(_fmt_row(r) for _, r in df.iterrows())}</table>')
-    parts.append(_ind_table(df))
-    parts.append(_risco_table(df))
+    if show_ind:
+        parts.append(_ind_table(df))
+    if show_risco:
+        parts.append(_risco_table(df))
     parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
-    if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
+    if show_agenda and ("prox_resultado" in df.columns or "ex_dividendo" in df.columns):
         parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
-    parts.append(_teses_block(df))          # IA para todos deste bloco
+    parts.append(_teses_block(df, tese_max=tese_max))          # IA para todos deste bloco
     return "".join(parts)
 
 
@@ -428,21 +446,26 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
     _SECTOR_MED = setor_medians or {}
     topo = _market_block(market) + _mood_block(mood)
     suf = f" ({group_pct}% de maior score)" if group_pct else ""
-    watch = ""
-    if carteira_df is not None and not carteira_df.empty:
-        watch += _watch_block(carteira_df, "Minha carteira",
-                              "Todos os papéis da sua carteira (arquivo carteira.txt), com "
-                              "dados, preços-teto e análise por IA — independentemente dos "
-                              "filtros.", posicao=True)
-    if wishlist_df is not None and not wishlist_df.empty:
-        watch += _watch_block(wishlist_df, "Wishlist",
-                             "Papéis que você quer acompanhar (arquivo wishlist.txt), com "
-                             "dados, preços-teto e análise por IA — mesmo reprovados no corte.")
-    if selecionados is None or selecionados.empty:
-        body = topo + \
-            '<p class="empty">Nenhum papel passou no corte fundamentalista hoje.</p>' + watch
-        n_graf = 0
-    else:
+
+    # monta o corpo com verbosidade controlável (para caber no limite de ~102 KB do Gmail)
+    def assemble(show_ind, show_risco, show_agenda, tese_max=0):
+        watch = ""
+        if carteira_df is not None and not carteira_df.empty:
+            watch += _watch_block(carteira_df, "Minha carteira",
+                                  "Todos os papéis da sua carteira (arquivo carteira.txt), com "
+                                  "dados, preços-teto e análise por IA — independentemente dos "
+                                  "filtros.", posicao=True, show_ind=show_ind,
+                                  show_risco=show_risco, show_agenda=show_agenda,
+                                  tese_max=tese_max)
+        if wishlist_df is not None and not wishlist_df.empty:
+            watch += _watch_block(wishlist_df, "Wishlist",
+                                 "Papéis que você quer acompanhar (arquivo wishlist.txt), com "
+                                 "dados, preços-teto e análise por IA — mesmo reprovados no "
+                                 "corte.", show_ind=show_ind, show_risco=show_risco,
+                                 show_agenda=show_agenda, tese_max=tese_max)
+        if selecionados is None or selecionados.empty:
+            return (topo + '<p class="empty">Nenhum papel passou no corte fundamentalista '
+                    'hoje.</p>' + watch), 0
         og = selecionados["oportunidade_grafica"] if "oportunidade_grafica" \
             in selecionados.columns else pd.Series("Não", index=selecionados.index)
         n_graf = int((og != "Não").sum())
@@ -459,15 +482,45 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                 "investment", ascending=False)
         else:
             defensivas = selecionados.iloc[0:0]
+        nota_trim = ""
+        if not (show_ind and show_risco and show_agenda):
+            faltando = []
+            if not show_ind:
+                faltando.append("indicadores")
+            if not show_risco:
+                faltando.append("preço &amp; risco")
+            if not show_agenda:
+                faltando.append("agenda")
+            nota_trim = (f'<p class="sub" style="margin:8px 0 0">Para caber no e-mail, as '
+                         f'tabelas de <b>{", ".join(faltando)}</b> foram omitidas aqui — o '
+                         f'detalhe completo está na <b>planilha anexa</b>.</p>')
         body = (
-            topo
-            + _group_block(bova, f"BOVA11 · Ibovespa{suf}")
-            + _group_block(small, f"SMALL11 · Small Caps{suf}")
+            topo + nota_trim
+            + _group_block(bova, f"BOVA11 · Ibovespa{suf}", show_ind, show_risco, show_agenda)
+            + _group_block(small, f"SMALL11 · Small Caps{suf}", show_ind, show_risco, show_agenda)
             + _defensivas_section(defensivas, defensive_cyc)
             + f'<p class="sub" style="margin:14px 0 0">{_TETO_NOTE}</p>'
-            + _teses_block(selecionados)
-            + watch                          # Carteira e Wishlist ao final
+            + _teses_block(selecionados, tese_max=tese_max)
+            + watch
         )
+        return body, n_graf
+
+    # tenta cheio; se passar do orçamento, remove tabelas opcionais progressivamente e, por
+    # último, trunca as teses de IA — garantindo caber no limite de ~102 KB do Gmail (margem).
+    budget = 96 * 1024
+    niveis = ((True, True, True, 0), (True, True, False, 0), (True, False, False, 0),
+              (False, False, False, 0), (False, False, False, 240),
+              (False, False, False, 120))
+    for nivel in niveis:
+        si, sr, sa, tmax = nivel
+        body, n_graf = assemble(si, sr, sa, tmax)
+        html = _wrap(body, hoje, meta, n_graf)
+        if len(html.encode("utf-8")) <= budget or nivel == niveis[-1]:
+            return html
+    return html
+
+
+def _wrap(body: str, hoje: str, meta: dict, n_graf: int) -> str:
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{_CSS}</style></head>
 <body><div class="card">
 <h1>Relatório Quantitativo · Ações B3</h1>
