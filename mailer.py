@@ -269,7 +269,9 @@ _IND_METRICS = [
     ("div_liq_ebitda", "DL/EB", "lo", False), ("div_liq_patrim", "DL/PL", "lo", False),
     ("roe", "ROE", "hi", True), ("roic", "ROIC", "hi", True),
     ("payout", "Pay.", None, True),           # payout é não-monotônico -> sem cor
-    ("mrg_liq", "Mrg", "hi", True), ("liq_corr", "Liq", "hi", False),
+    ("mrg_liq", "Mrg", "hi", True), ("liq_corr", "Liq.corr", "hi", False),
+    ("liq_geral", "Liq.ger", "hi", False), ("grau_endiv", "Endiv", "lo", True),
+    ("indep_fin", "Indep", "hi", True), ("roa", "ROA", "hi", True),
     ("cresc_5a", "Cresc", "hi", True), ("pl_fut", "P/L fut", "lo", False),
 ]
 
@@ -341,11 +343,13 @@ def _ind_table(df: pd.DataFrame) -> str:
                         for col, _, direc, pct in _IND_METRICS)
         linhas.append(f"<tr><td><b>{tk}</b></td>{cells}</tr>")
     leg = ('<p class="sub" style="margin:4px 0 0">EV/EB = EV/EBITDA; DL/EB = Dív.líq./EBITDA; '
-           'DL/PL = Dív.líq./Patrimônio; Pay. = payout; Mrg = margem líq.; Liq = liquidez '
-           'corr.; Cresc = cresc. receita 5a. ROE/ROIC/Mrg/Cresc/Pay. em %. '
+           'DL/PL = Dív.líq./Patrimônio; Pay. = payout; Mrg = margem líq.; Liq.corr = liquidez '
+           'corrente; Liq.ger = liquidez geral; Endiv = grau de endividamento (Passivo/Ativo); '
+           'Indep = independência financeira (PL/Ativo); ROA = retorno s/ ativos; Cresc = '
+           'cresc. receita 5a. ROE/ROIC/Mrg/Cresc/Pay./Endiv/Indep/ROA em %. '
            '<span style="color:#16a34a">Verde</span> = melhor que a mediana do setor; '
            '<span style="color:#dc2626">vermelho</span> = pior (payout sem cor por ser '
-           'não-monotônico). Financeiras não têm alguns indicadores (—).</p>')
+           'não-monotônico). Alguns campos dependem do balanço (yfinance) e podem vir (—).</p>')
     return (f'<h3 style="{_H3}">Indicadores fundamentalistas</h3>'
             f'<div class="ind"><table>{head}{"".join(linhas)}</table></div>{leg}')
 
@@ -441,10 +445,18 @@ def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False,
 def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                market: dict = None, mood: dict = None, group_pct: int = None,
                defensive_cyc: float = 0.4, wishlist_df: pd.DataFrame = None,
-               carteira_df: pd.DataFrame = None, setor_medians: dict = None) -> str:
+               carteira_df: pd.DataFrame = None, setor_medians: dict = None,
+               macro: dict = None, regime: dict = None) -> str:
     global _SECTOR_MED
     _SECTOR_MED = setor_medians or {}
-    topo = _market_block(market) + _mood_block(mood)
+    painel = ""
+    if macro:
+        try:
+            from macro import render_panel
+            painel = render_panel(macro, regime or {})
+        except Exception:
+            painel = ""
+    topo = painel + _market_block(market) + _mood_block(mood)
     suf = f" ({group_pct}% de maior score)" if group_pct else ""
 
     # monta o corpo com verbosidade controlável (para caber no limite de ~102 KB do Gmail)
