@@ -489,6 +489,26 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             from market import market_summary, market_mood
             resumo = market_summary(selic)          # Selic + índices (YTD/MTD)
             humor = market_mood(full)               # % alta/baixa por índice e setor
+            # panorama macro (BCB/Focus/yfinance) + Índice de Regime Brasil
+            macro_data, regime = {}, {}
+            try:
+                from macro import fetch_macro, regime_brasil, render_report
+                macro_data = fetch_macro(selic)
+                breadth = None
+                try:
+                    idx = (humor or {}).get("indices", {})
+                    vals = [v.get("alta") for v in idx.values() if v]
+                    breadth = sum(vals) / len(vals) if vals else None
+                except Exception:
+                    breadth = None
+                regime = regime_brasil(macro_data, breadth_alta=breadth)
+                macro_html = render_report(macro_data, regime, hoje)
+                macro_path = f"{outdir}/macro_{hoje}.html"
+                with open(macro_path, "w", encoding="utf-8") as fh:
+                    fh.write(macro_html)
+            except Exception as e:
+                print(f"[macro] indisponível: {e}")
+                macro_path = None
             html = build_html(selecionados, hoje, dict(universe=universe,
                               top_quantile=top_quantile, min_invest=min_invest),
                               market=resumo, mood=humor,
@@ -496,6 +516,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                          and min_invest is None else None),
                               defensive_cyc=defensive_max_cyc,
                               setor_medians=setor_medians,
+                              macro=macro_data, regime=regime,
                               wishlist_df=full[full["in_wishlist"]].sort_values(
                                   "investment", ascending=False),
                               carteira_df=full[full["in_carteira"]].sort_values(
@@ -504,7 +525,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 if len(selecionados) else 0
             subject = (f"[Screener B3] {len(selecionados)} papéis nos critérios "
                        f"({n_graf} com oportunidade gráfica) — {hoje}")
-            anexos = [p for p in (xlsx_path, f"{outdir}/selecionados_{hoje}.csv") if p]
+            anexos = [p for p in (xlsx_path, f"{outdir}/selecionados_{hoje}.csv",
+                                  macro_path) if p]
             send_report_email(subject, html, anexos)
         except Exception as e:
             print(f"[email] falhou: {e}")
