@@ -575,9 +575,18 @@ def html_to_pdf(html: str, path: str) -> str | None:
     None em falha (aí o pipeline segue só com o corpo/planilha)."""
     try:
         from xhtml2pdf import pisa
+    except Exception:
+        print("[pdf] xhtml2pdf NÃO instalado — rode 'pip install -r requirements.txt' "
+              "(ou pip install xhtml2pdf) no workflow. Enviando relatório no corpo.")
+        return None
+    try:
         with open(path, "wb") as fh:
             status = pisa.CreatePDF(html, dest=fh, encoding="utf-8")
-        return None if status.err else path
+        if status.err:
+            print("[pdf] xhtml2pdf reportou erro ao gerar o PDF.")
+            return None
+        print(f"[pdf] PDF gerado: {path}")
+        return path
     except Exception as e:
         print(f"[pdf] falha ao gerar PDF: {e}")
         return None

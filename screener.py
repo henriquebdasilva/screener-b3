@@ -38,7 +38,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         max_net_debt_equity=1.5, split_by_origin=True, group_top=None,
         use_basileia=True, cyclical_penalty=0.25, defensive_max_cyc=0.4,
         teto_max_upside=200.0, teto_disp_max=8.0,
-        suspect_pl_min=2.0, suspect_dy_max=20.0, teto_proj_yield=6.0):
+        suspect_pl_min=2.0, suspect_dy_max=20.0, teto_proj_yield=6.0,
+        min_margin=8.0, min_roe=10.0):
 
     tickers = get_universe(universe)
     from watchlist import get_wishlist, get_carteira
@@ -359,6 +360,25 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     if strict_criteria:
         hard &= (df["passa_checklist"] == True)                # noqa: E712
+
+    # margem líquida mínima (só não-financeiras; margem não se aplica a bancos/seguros)
+    if min_margin and min_margin > 0:
+        mrg = pd.to_numeric(df.get("mrg_liq"), errors="coerce")
+        margem_baixa = (~fin_series) & mrg.notna() & (mrg < min_margin)
+        df["margem_ok"] = ~margem_baixa                        # dado ausente não reprova
+        hard &= ~margem_baixa
+    else:
+        df["margem_ok"] = True
+
+    # ROE mínimo (vale para todos os setores; ROE é relevante inclusive p/ bancos)
+    if min_roe and min_roe > 0:
+        roe = pd.to_numeric(df.get("roe"), errors="coerce")
+        roe_baixo = roe.notna() & (roe < min_roe)
+        df["roe_ok"] = ~roe_baixo                              # dado ausente não reprova
+        hard &= ~roe_baixo
+    else:
+        df["roe_ok"] = True
+
     hard = hard.fillna(False)
 
     # 2) percentil por grupo, calculado SÓ entre os sobreviventes dos cortes duros
@@ -432,6 +452,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "cresc_lucro_5a", "n_ok", "n_aplic",
             "roe_roic_ge_selic", "roe_ge_setor", "roic_ge_setor",
             "margem_ge_15", "cagr_ge_setor", "divida_ok", "marketcap_ok", "insider_ok",
+            "margem_ok", "roe_ok",
             "alavancagem_ok", "div_liq_patrim", "nde_ok",
             "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roic", "mrg_liq",
             "ev_ebitda", "div_liq_ebitda",
@@ -502,6 +523,15 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 except Exception:
                     breadth = None
                 regime = regime_brasil(macro_data, breadth_alta=breadth)
+                _n = sum(1 for k, v in (macro_data or {}).items()
+                         if isinstance(v, dict) and v.get("val") is not None)
+                _sc = regime.get("score") if regime else None
+                print(f"[macro] {_n} indicadores obtidos do BCB/yfinance; "
+                      f"Focus IPCA={'ok' if (macro_data.get('focus_ipca') or {}).get('hoje') is not None else 'n/d'}; "
+                      f"regime={_sc if _sc is not None else 'n/d'}.")
+                if _n == 0:
+                    print("[macro] ATENÇÃO: nenhum indicador retornou — as APIs do BCB/Focus "
+                          "podem estar indisponíveis ou bloqueadas no runner.")
                 macro_html = render_report(macro_data, regime, hoje)
                 macro_path = f"{outdir}/macro_{hoje}.html"
                 with open(macro_path, "w", encoding="utf-8") as fh:
@@ -536,7 +566,10 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 html = build_email_body(hoje, meta_dict, resumo, humor,
                                         len(selecionados), n_graf, macro=macro_data,
                                         regime=regime, tem_pdf=True)
+                print("[email] enviando corpo curto + relatório completo em PDF.")
             else:                   # fallback: relatório no corpo (com guarda de tamanho)
+                print("[email] PDF indisponível — enviando relatório no corpo (com guarda "
+                      "de tamanho).")
                 html = build_html(selecionados, hoje, meta_dict, market=resumo, mood=humor,
                                   group_pct=gpct, defensive_cyc=defensive_max_cyc,
                                   setor_medians=setor_medians, macro=macro_data,
@@ -654,6 +687,12 @@ def parse_args():
     p.add_argument("--teto-proj-yield", type=float, default=6.0,
                    help="DY-alvo (%%) do teto projetivo Bazin: LPA×(1+g)×payout / DY-alvo "
                         "(default 6.0)")
+    p.add_argument("--min-margin", type=float, default=8.0,
+                   help="Corte duro: margem líquida mínima (%%) p/ não-financeiras "
+                        "(default 8; 0 desliga)")
+    p.add_argument("--min-roe", type=float, default=10.0,
+                   help="Corte duro: ROE mínimo (%%) p/ todos os setores "
+                        "(default 10; 0 desliga)")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -694,4 +733,5 @@ if __name__ == "__main__":
         defensive_max_cyc=a.defensive_max_cyc,
         teto_max_upside=a.teto_max_upside, teto_disp_max=a.teto_disp_max,
         suspect_pl_min=a.suspect_pl_min, suspect_dy_max=a.suspect_dy_max,
-        teto_proj_yield=a.teto_proj_yield)
+        teto_proj_yield=a.teto_proj_yield,
+        min_margin=a.min_margin, min_roe=a.min_roe)
