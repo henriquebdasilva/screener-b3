@@ -195,7 +195,7 @@ def _teses_block(df: pd.DataFrame, tese_max: int = 0) -> str:
 
 
 _H2 = 'font-size:15px;margin:22px 0 6px;color:#0f172a'
-_H3 = 'font-size:12.5px;margin:14px 0 4px;color:#475569;text-transform:uppercase;letter-spacing:.04em'
+_H3 = 'font-size:12.5px;margin:14px 0 4px;color:#475569;text-transform:uppercase'
 
 _MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
           "agosto", "setembro", "outubro", "novembro", "dezembro"]
@@ -450,7 +450,7 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                market: dict = None, mood: dict = None, group_pct: int = None,
                defensive_cyc: float = 0.4, wishlist_df: pd.DataFrame = None,
                carteira_df: pd.DataFrame = None, setor_medians: dict = None,
-               macro: dict = None, regime: dict = None) -> str:
+               macro: dict = None, regime: dict = None, for_pdf: bool = False) -> str:
     global _SECTOR_MED
     _SECTOR_MED = setor_medians or {}
     painel = ""
@@ -526,6 +526,11 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
         )
         return body, n_graf
 
+    # PDF (anexo) não tem limite de tamanho: monta o relatório COMPLETO, sem cortes.
+    if for_pdf:
+        body, n_graf = assemble(True, True, True, 0, True)
+        return _wrap(body, hoje, meta, n_graf, pdf=True)
+
     # tenta cheio; se passar do orçamento, corta na ordem: agenda -> trunca teses -> risco ->
     # preços-teto -> indicadores. Fundamentos são os ÚLTIMOS a cair (tudo está na planilha).
     budget = 100 * 1024
@@ -542,8 +547,12 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
     return html
 
 
-def _wrap(body: str, hoje: str, meta: dict, n_graf: int) -> str:
-    return f"""<!doctype html><html><head><meta charset="utf-8"><style>{_CSS}</style></head>
+def _wrap(body: str, hoje: str, meta: dict, n_graf: int, pdf: bool = False) -> str:
+    # no PDF: página deitada (A4 landscape) e fonte de tabela menor p/ caber tabelas largas
+    page = ("@page{size:A4 landscape;margin:1.1cm}"
+            "body{font-size:12px}table{font-size:9.5px}.ind table{font-size:8.5px}"
+            ".card{box-shadow:none;padding:0}" if pdf else "")
+    return f"""<!doctype html><html><head><meta charset="utf-8"><style>{_CSS}{page}</style></head>
 <body><div class="card">
 <h1>Relatório Quantitativo · Ações B3</h1>
 <p class="sub" style="margin:0 0 14px">{_fmt_date(hoje)}</p>
@@ -559,6 +568,50 @@ a média do universo varrido; insiders e índices de mercado são <i>best-effort
 completa (Selecionados + Universo) segue anexada.</p>
 <p class="sub" style="margin-top:8px;font-size:11px;color:#94a3b8">Parâmetros: {meta}</p>
 </div></body></html>"""
+
+
+def html_to_pdf(html: str, path: str) -> str | None:
+    """Converte o HTML do relatório em PDF (xhtml2pdf, pura Python). Retorna o caminho ou
+    None em falha (aí o pipeline segue só com o corpo/planilha)."""
+    try:
+        from xhtml2pdf import pisa
+        with open(path, "wb") as fh:
+            status = pisa.CreatePDF(html, dest=fh, encoding="utf-8")
+        return None if status.err else path
+    except Exception as e:
+        print(f"[pdf] falha ao gerar PDF: {e}")
+        return None
+
+
+def build_email_body(hoje: str, meta: dict, market: dict, mood: dict, n_sel: int,
+                     n_graf: int, macro: dict = None, regime: dict = None,
+                     tem_pdf: bool = True) -> str:
+    """Corpo CURTO do e-mail: panorama macro + resumo de mercado + aviso de anexos.
+    O relatório completo (todas as tabelas) vai no PDF anexo — sem risco de corte."""
+    global _SECTOR_MED
+    painel = ""
+    if macro:
+        try:
+            from macro import render_panel
+            painel = render_panel(macro, regime or {})
+        except Exception:
+            painel = ""
+    anexos = ("<b>relatório completo em PDF</b> (todas as tabelas, preços-teto e teses), "
+              "além da planilha (.xlsx) e do .csv" if tem_pdf
+              else "a planilha (.xlsx) e o .csv")
+    corpo = (
+        f'<h1>Relatório Quantitativo · Ações B3</h1>'
+        f'<p class="sub" style="margin:0 0 14px">{_fmt_date(hoje)}</p>'
+        f'{painel}{_market_block(market)}{_mood_block(mood)}'
+        f'<p style="margin:12px 0 6px"><b>{n_sel} papéis</b> passaram no corte '
+        f'fundamentalista hoje ({n_graf} com oportunidade gráfica). O detalhamento — '
+        f'fundamentos, preço &amp; risco e preços-teto por papel — está no {anexos}, '
+        f'em anexo.</p>'
+        f'<p class="warn">Material analítico automático. <b>Não é recomendação de '
+        f'investimento.</b> Dados públicos podem ter erros/defasagem.</p>'
+        f'<p class="sub" style="font-size:11px;color:#94a3b8">Parâmetros: {meta}</p>')
+    return f"""<!doctype html><html><head><meta charset="utf-8"><style>{_CSS}</style></head>
+<body><div class="card">{corpo}</div></body></html>"""
 
 
 # ---------------- exportação da planilha ----------------

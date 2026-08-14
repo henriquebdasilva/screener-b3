@@ -509,24 +509,43 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             except Exception as e:
                 print(f"[macro] indisponível: {e}")
                 macro_path = None
-            html = build_html(selecionados, hoje, dict(universe=universe,
-                              top_quantile=top_quantile, min_invest=min_invest),
-                              market=resumo, mood=humor,
-                              group_pct=(int(round(frac * 100)) if split_by_origin
-                                         and min_invest is None else None),
-                              defensive_cyc=defensive_max_cyc,
-                              setor_medians=setor_medians,
-                              macro=macro_data, regime=regime,
-                              wishlist_df=full[full["in_wishlist"]].sort_values(
-                                  "investment", ascending=False),
-                              carteira_df=full[full["in_carteira"]].sort_values(
-                                  "investment", ascending=False))
             n_graf = int((selecionados["oportunidade_grafica"] != "Não").sum()) \
                 if len(selecionados) else 0
+            meta_dict = dict(universe=universe, top_quantile=top_quantile,
+                             min_invest=min_invest)
+            gpct = (int(round(frac * 100)) if split_by_origin
+                    and min_invest is None else None)
+            wl_df = full[full["in_wishlist"]].sort_values("investment", ascending=False)
+            ca_df = full[full["in_carteira"]].sort_values("investment", ascending=False)
+
+            # PDF: relatório COMPLETO (sem cortes) como anexo — evita o limite do Gmail
+            import os as _os
+            pdf_path = None
+            if _os.getenv("EMAIL_PDF", "1") != "0":
+                from mailer import html_to_pdf
+                full_html = build_html(selecionados, hoje, meta_dict, market=resumo,
+                                       mood=humor, group_pct=gpct,
+                                       defensive_cyc=defensive_max_cyc,
+                                       setor_medians=setor_medians, macro=macro_data,
+                                       regime=regime, wishlist_df=wl_df, carteira_df=ca_df,
+                                       for_pdf=True)
+                pdf_path = html_to_pdf(full_html, f"{outdir}/relatorio_{hoje}.pdf")
+
+            if pdf_path:            # corpo curto + relatório no PDF anexo
+                from mailer import build_email_body
+                html = build_email_body(hoje, meta_dict, resumo, humor,
+                                        len(selecionados), n_graf, macro=macro_data,
+                                        regime=regime, tem_pdf=True)
+            else:                   # fallback: relatório no corpo (com guarda de tamanho)
+                html = build_html(selecionados, hoje, meta_dict, market=resumo, mood=humor,
+                                  group_pct=gpct, defensive_cyc=defensive_max_cyc,
+                                  setor_medians=setor_medians, macro=macro_data,
+                                  regime=regime, wishlist_df=wl_df, carteira_df=ca_df)
+
             subject = (f"[Screener B3] {len(selecionados)} papéis nos critérios "
                        f"({n_graf} com oportunidade gráfica) — {hoje}")
-            anexos = [p for p in (xlsx_path, f"{outdir}/selecionados_{hoje}.csv",
-                                  macro_path) if p]
+            anexos = [p for p in (pdf_path, xlsx_path,
+                                  f"{outdir}/selecionados_{hoje}.csv", macro_path) if p]
             send_report_email(subject, html, anexos)
         except Exception as e:
             print(f"[email] falhou: {e}")
