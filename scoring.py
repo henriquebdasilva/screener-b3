@@ -99,7 +99,7 @@ def build_dataframe(funds: list[Fundamentals], pl_min: float = 2.0,
 
 
 def score_universe(funds: list[Fundamentals], pl_min: float = 2.0,
-                   dy_max: float = 20.0) -> pd.DataFrame:
+                   dy_max: float = 20.0, selic: float = 14.0) -> pd.DataFrame:
     df = build_dataframe(funds, pl_min=pl_min, dy_max=dy_max)
     if df.empty:
         return df
@@ -116,8 +116,16 @@ def score_universe(funds: list[Fundamentals], pl_min: float = 2.0,
         "peg": _rank_score(df["peg"], False),
         "ev_ebitda": _rank_score(df["ev_ebitda_s"], False),
     }
+    # Alavancagem AJUSTADA pelo retorno: DL/EBITDA ÷ (ROIC/Selic). Quando o ROIC supera o
+    # custo de capital (Selic), a dívida "pesa menos"; quando fica abaixo, pesa mais. Assim o
+    # Safety cruza ROIC com dívida líquida. Fallback ao DL/EBITDA cru quando falta ROIC.
+    _selic = float(selic) if selic and selic > 0 else 14.0
+    _fator = (pd.to_numeric(df["roic"], errors="coerce") / _selic).clip(lower=0.4, upper=2.5)
+    _lev = pd.to_numeric(df["div_liq_ebitda"], errors="coerce")
+    df["lev_roic_adj"] = _lev / _fator
+    df["lev_roic_adj"] = df["lev_roic_adj"].fillna(_lev)      # sem ROIC -> alavancagem crua
     ns = {
-        "div_liq_ebitda": _rank_score(df["div_liq_ebitda"], False),
+        "div_liq_ebitda": _rank_score(df["lev_roic_adj"], False),
         "liq_corr": _rank_score(df["liq_corr"], True),
         "div_patrim": _rank_score(df["div_patrim"], False),
     }
