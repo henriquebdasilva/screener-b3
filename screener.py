@@ -39,7 +39,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         use_basileia=True, cyclical_penalty=0.25, defensive_max_cyc=0.4,
         teto_max_upside=200.0, teto_disp_max=8.0,
         suspect_pl_min=2.0, suspect_dy_max=20.0, teto_proj_yield=6.0,
-        min_margin=8.0, min_roe=10.0):
+        min_margin=8.0, min_roe=10.0,
+        defensive_lev_mult=1.8, defensive_lev_cyc=0.2):
 
     tickers = get_universe(universe)
     from watchlist import get_wishlist, get_carteira
@@ -336,10 +337,16 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     if mktcap_filter:
         hard &= (df["marketcap_ok"] == True)                   # noqa: E712 (NaN reprova)
 
+    # setores defensivos/regulados (baixa ciclicidade: utilities, elétricas, saneamento)
+    # toleram MAIS dívida — fluxo de caixa estável/regulado. Limite = base × multiplicador.
+    defensivo = df["ciclicidade"] <= defensive_lev_cyc
+
     # Dív.Líq/EBITDA <= teto (alavancagem), exceto financeiras
     if max_leverage and max_leverage > 0:
         lev = df["div_liq_ebitda"]
-        muito_endividada = (~fin_series) & lev.notna() & (lev > max_leverage)
+        lim_lev = pd.Series(float(max_leverage), index=df.index)
+        lim_lev[defensivo] = float(max_leverage) * defensive_lev_mult
+        muito_endividada = (~fin_series) & lev.notna() & (lev > lim_lev)
         df["alavancagem_ok"] = ~muito_endividada
         hard &= ~muito_endividada
     else:
@@ -357,7 +364,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     df["div_liq_patrim"] = base.fillna(derivada).round(2)
     if max_net_debt_equity and max_net_debt_equity > 0:
         nde = df["div_liq_patrim"]
-        endivid_patrim = (~fin_series) & nde.notna() & (nde > max_net_debt_equity)
+        lim_nde = pd.Series(float(max_net_debt_equity), index=df.index)
+        lim_nde[defensivo] = float(max_net_debt_equity) * defensive_lev_mult
+        endivid_patrim = (~fin_series) & nde.notna() & (nde > lim_nde)
         df["nde_ok"] = ~endivid_patrim
         hard &= ~endivid_patrim
     else:
@@ -700,8 +709,14 @@ def parse_args():
                    help="Corte duro: margem líquida mínima (%%) p/ não-financeiras "
                         "(default 8; 0 desliga)")
     p.add_argument("--min-roe", type=float, default=10.0,
-                   help="Corte duro: ROE mínimo (%%) p/ todos os setores "
+                   help="Corte duro: ROE médio (5a) mínimo (%%) p/ todos os setores "
                         "(default 10; 0 desliga)")
+    p.add_argument("--defensive-lev-mult", type=float, default=1.8,
+                   help="Multiplicador do limite de dívida p/ setores defensivos/regulados "
+                        "(default 1.8; 1.0 = sem folga)")
+    p.add_argument("--defensive-lev-cyc", type=float, default=0.2,
+                   help="Ciclicidade máx. p/ ganhar a folga de dívida de defensivo "
+                        "(default 0.2; utilities/elétricas/saneamento têm 0.1)")
     p.add_argument("--no-trend", action="store_true")
     p.add_argument("--no-volume", action="store_true")
     p.add_argument("--require-contraction", action="store_true")
@@ -743,4 +758,5 @@ if __name__ == "__main__":
         teto_max_upside=a.teto_max_upside, teto_disp_max=a.teto_disp_max,
         suspect_pl_min=a.suspect_pl_min, suspect_dy_max=a.suspect_dy_max,
         teto_proj_yield=a.teto_proj_yield,
-        min_margin=a.min_margin, min_roe=a.min_roe)
+        min_margin=a.min_margin, min_roe=a.min_roe,
+        defensive_lev_mult=a.defensive_lev_mult, defensive_lev_cyc=a.defensive_lev_cyc)
