@@ -4,11 +4,11 @@
 
 > Material analítico gerado automaticamente. **Não é recomendação de investimento.** Preços/fundamentos de fontes públicas podem conter erros ou defasagem. O rompimento/pivô é um port do algoritmo de referência (`breakout.py`) e serve como **flag de timing**, não como filtro.
 
-## Papéis nos critérios fundamentalistas — 26 (6 com oportunidade gráfica)
+## Papéis nos critérios fundamentalistas — 29 (6 com oportunidade gráfica)
 
 | ticker   | origem                  | setor                        |   investment |   quality |   value |   safety |   dividend | oport_grafica   | trend    |   close |   pct_to_level |
 |----------|-------------------------|------------------------------|--------------|-----------|---------|----------|------------|-----------------|----------|---------|----------------|
-| JHSF3    | SMALL11                 | Imobiliário                  |        79.2  |     87.92 |   79.21 |    54.59 |      70.14 | Não             | Em Baixa |   10.57 |      -5.20179  |
+| JHSF3    | SMALL11                 | Imobiliário                  |        79.2  |     87.92 |   79.21 |    54.59 |      70.14 | Não             | Em Baixa |   10.57 |      -6.78692  |
 | VULC3    | SMALL11                 | Consumo discricionário       |        76.34 |     88.59 |   59.76 |    65.35 |      95.83 | Não             | Em Baixa |   13.82 |      -2.53879  |
 | POMO3    | SMALL11                 | Bens Industriais             |        75.91 |     81.54 |   76.12 |    52.21 |      90.28 | Não             | Em Baixa |    4.01 |     -19.6393   |
 | MDNE3    | SMALL11                 | Imobiliário                  |        75.77 |     73.15 |   77.35 |    65.45 |      79.17 | Não             | Em Baixa |   24.16 |      -4.88189  |
@@ -25,15 +25,18 @@
 | LAVV3    | SMALL11                 | Imobiliário                  |        67.64 |     66.89 |   57.97 |    57.11 |      94.44 | Não             | Em Baixa |    9.59 |      -9.27152  |
 | TGMA3    | SMALL11                 | Bens Industriais             |        67.3  |     79.19 |   34.66 |    70.24 |      84.72 | Fundo duplo     | Em Alta  |   33.4  |      -0.890205 |
 | DIRR3    | BOVA11+SMALL11          | Consumo discricionário       |        66.79 |     72.71 |   54.59 |    53.79 |      90.97 | Não             | Em Baixa |   10.59 |     -10.5574   |
+| GRND3    | SMALL11                 | Consumo discricionário       |        66.46 |     63.76 |   54.48 |    67.59 |     100    | Não             | Em Baixa |    3.5  |      -7.65171  |
 | LREN3    | BOVA11+SMALL11          | Consumo discricionário       |        66.3  |     70.25 |   69.68 |    58.79 |      48.61 | Não             | Em Baixa |   11.51 |     -17.1942   |
 | MULT3    | BOVA11+SMALL11          | Imobiliário                  |        63.01 |     87.47 |   40.48 |    42.05 |      38.89 | Não             | Em Baixa |   27.37 |      -5.84795  |
 | VIVA3    | BOVA11+SMALL11          | Consumo discricionário       |        62.81 |     77.07 |   54.52 |    66.31 |      17.36 | Não             | Em Baixa |   21.22 |      -7.09282  |
-| BBSE3    | BOVA11                  | Insurance                    |        62.26 |     68.12 |   31.94 |    61    |      91.67 | Não             | Em Baixa |   37.19 |      -8.21426  |
+| BBSE3    | BOVA11                  | Insurance                    |        62.26 |     68.12 |   31.94 |    61    |      91.67 | Não             | Em Baixa |   37.19 |      -7.8246   |
 | TOTS3    | BOVA11+SMALL11+Wishlist | Tecnologia de informação     |        61.54 |     86.8  |   33.38 |    47.07 |      14.58 | Não             | Lateral  |   29.53 |      -9.1664   |
 | BBDC3    | BOVA11                  | Produtos financeiros         |        60.82 |     51.34 |   66.79 |    66.43 |      74.31 | Não             | Em Baixa |   14.59 |     -10.8386   |
+| ISAE4    | BOVA11                  | Serviços públicos            |        60.73 |     61.52 |   54.63 |    59.4  |      76.39 | Não             | Em Baixa |   25.83 |      -9.36842  |
 | ITSA4    | BOVA11                  | Financial Services           |        60.55 |     61.52 |   47.63 |   nan    |      79.86 | Não             | Em Baixa |   12.44 |     -10.3746   |
 | ITUB4    | BOVA11                  | Produtos financeiros         |        60    |     59.17 |   39.36 |    70.71 |      67.36 | Não             | Em Baixa |   38.31 |     -11.2578   |
 | ABEV3    | BOVA11                  | Bens de primeira necessidade |        59.45 |     79.31 |   19.13 |    67.64 |      53.47 | Não             | Em Baixa |   14.92 |      -7.32919  |
+| BBDC4    | BOVA11                  | Produtos financeiros         |        58.92 |     51.34 |   58.69 |    66.43 |      72.22 | Não             | Em Baixa |   16.66 |     -10.9971   |
 
 ## 🏅 Top 15 por Investment Score (universo todo)
 
