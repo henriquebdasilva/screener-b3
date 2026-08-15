@@ -86,11 +86,14 @@ def build_dataframe(funds: list[Fundamentals], pl_min: float = 2.0,
             "roe": f.roe, "roic": f.roic, "mrg_liq": f.mrg_liq,
             "ev_ebitda": np.nan if fin else f.ev_ebitda,
             "div_liq_ebitda": np.nan if fin else f.div_liq_ebitda,
+            "div_liq_patrim_src": np.nan if fin else f.div_liq_patrim,
             "div_patrim": np.nan if fin else f.div_patrim,
             "liq_corr": np.nan if fin else f.liq_corr,
             "cresc_5a": f.cresc_5a,
             "growth_est": g_est if g_est is not None else np.nan,
             "peg": peg,
+            "lpa": f.lpa, "payout_ratio": f.payout_ratio, "pl_fut": f.pl_fut,
+            "roa": f.roa,
         })
     return pd.DataFrame(rows).set_index("ticker")
 
@@ -167,19 +170,22 @@ SECTOR_CYCLICALITY = {
     "consumer defensive": 0.15, "consumo defensivo": 0.15, "consumo nao ciclico": 0.15,
     "consumo basico": 0.15, "alimentos": 0.2, "bebidas": 0.15,
     "utilities": 0.1, "utilidade publica": 0.1, "energia eletrica": 0.1, "saneamento": 0.1,
+    "servicos publicos": 0.1, "servico publico": 0.1, "eletrica": 0.1, "transmissao": 0.1,
     "agua": 0.1, "telecom": 0.3,
 }
 CYCLICALITY_DEFAULT = 0.0     # setor desconhecido -> não penaliza (conservador)
 
 
 def cyclicality(setor) -> float:
-    """Fator de ciclicidade 0..1 a partir do nome do setor (0 = defensivo)."""
+    """Fator de ciclicidade 0..1 a partir do nome do setor (0 = defensivo).
+    Usa o rótulo MAIS ESPECÍFICO (substring mais longa) — ex.: 'energia elétrica' (0.1)
+    prevalece sobre 'energia' (0.9), que é para petróleo/óleo & gás."""
     if not setor:
         return CYCLICALITY_DEFAULT
     import unicodedata
     s = unicodedata.normalize("NFKD", str(setor)).encode("ascii", "ignore").decode().lower()
-    best = None
-    for chave, fator in SECTOR_CYCLICALITY.items():
-        if chave in s:
-            best = fator if best is None else max(best, fator)
-    return best if best is not None else CYCLICALITY_DEFAULT
+    best_key = None
+    for chave in SECTOR_CYCLICALITY:
+        if chave in s and (best_key is None or len(chave) > len(best_key)):
+            best_key = chave
+    return SECTOR_CYCLICALITY[best_key] if best_key is not None else CYCLICALITY_DEFAULT

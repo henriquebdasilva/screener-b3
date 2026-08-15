@@ -70,6 +70,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     funds, breaks, origem, mcap, insider, avg_dy = [], {}, {}, {}, {}, {}
     listed_y, div_ge5, profit_hist, div_nocut, payout_med = {}, {}, {}, {}, {}
     pstats, risco, growth_hist, balanco = {}, {}, {}, {}
+    roe_med = {}
     ibov_close = get_ibov_close()                # p/ beta e correlação com o Ibovespa
     if ibov_close is None:
         print("[risco] Ibovespa (^BVSP) indisponível — beta/correlação ficarão n/d.")
@@ -127,6 +128,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             roe_year = {yr: (ni_y[yr] / eq[yr] * 100) for yr in eq
                         if yr in ni_y and eq[yr] and eq[yr] > 0}
             growth_hist.setdefault(tk, {})["roe"] = roe_year
+            # ROE médio dos últimos anos (>=2 anos) — usado no corte de qualidade
+            _vals = list(roe_year.values())
+            roe_med[tk] = (sum(_vals) / len(_vals)) if len(_vals) >= 2 else float("nan")
         except Exception:
             balanco[tk] = {}
         if i % 10 == 0:
@@ -176,6 +180,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     df["corr_ibov"] = [risco.get(t, {}).get("corr_ibov", float("nan")) for t in df.index]
     for _c in ("liq_geral", "grau_endiv", "indep_fin"):
         df[_c] = [balanco.get(t, {}).get(_c, float("nan")) for t in df.index]
+    df["roe_medio"] = [roe_med.get(t, float("nan")) for t in df.index]
 
     chk_rows, ceil_rows = {}, {}
     # múltiplo-alvo EV/EBITDA = mediana do setor (não-financeiras), limitado a [3, 15];
@@ -370,13 +375,17 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     else:
         df["margem_ok"] = True
 
-    # ROE mínimo (vale para todos os setores; ROE é relevante inclusive p/ bancos)
+    # ROE mínimo: usa o ROE MÉDIO dos últimos anos quando disponível (evita reprovar por um
+    # único ano ruim); onde não há histórico, cai no ROE atual. Vale para todos os setores.
     if min_roe and min_roe > 0:
-        roe = pd.to_numeric(df.get("roe"), errors="coerce")
-        roe_baixo = roe.notna() & (roe < min_roe)
-        df["roe_ok"] = ~roe_baixo                              # dado ausente não reprova
+        roe_med_col = pd.to_numeric(df.get("roe_medio"), errors="coerce")
+        roe_atual = pd.to_numeric(df.get("roe"), errors="coerce")
+        roe_ref = roe_med_col.fillna(roe_atual)               # média 5a; senão ROE atual
+        roe_baixo = roe_ref.notna() & (roe_ref < min_roe)
+        df["roe_ok"] = ~roe_baixo                             # dado ausente não reprova
         hard &= ~roe_baixo
     else:
+        df["roe_ok"] = True
         df["roe_ok"] = True
 
     hard = hard.fillna(False)
@@ -454,7 +463,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "margem_ge_15", "cagr_ge_setor", "divida_ok", "marketcap_ok", "insider_ok",
             "margem_ok", "roe_ok",
             "alavancagem_ok", "div_liq_patrim", "nde_ok",
-            "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roic", "mrg_liq",
+            "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roe_medio", "roic", "mrg_liq",
             "ev_ebitda", "div_liq_ebitda",
             "liq_corr", "div_patrim", "peg", "payout", "cresc_5a", "pl_fut",
             "roa", "liq_geral", "grau_endiv", "indep_fin",
