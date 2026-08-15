@@ -99,14 +99,28 @@ def build_dataframe(funds: list[Fundamentals], pl_min: float = 2.0,
 
 
 def score_universe(funds: list[Fundamentals], pl_min: float = 2.0,
-                   dy_max: float = 20.0, selic: float = 14.0) -> pd.DataFrame:
+                   dy_max: float = 20.0, selic: float = 14.0,
+                   roe_med: dict = None, reg_cyc: float = 0.2) -> pd.DataFrame:
     df = build_dataframe(funds, pl_min=pl_min, dy_max=dy_max)
     if df.empty:
         return df
 
     # notas normalizadas (n-XXX)
+    # setores REGULADOS (elétricas/saneamento/utilities, ciclicidade <= reg_cyc) têm lucro
+    # CONTÁBIL distorcido pelo resultado regulatório (VNR/IFRIC 12). Para eles: (a) o ROE do
+    # Quality usa a MÉDIA de 5 anos (suaviza a volatilidade contábil); (b) os blocos Quality e
+    # Value são reponderados a favor de métricas de EBITDA/caixa (ROIC, EV/EBITDA) e contra as
+    # de lucro contábil (ROE, P/L, PEG). Ajuste moderado (~60/40). Não toca nos cortes duros.
+    _cyc = df["setor"].map(cyclicality)
+    is_reg = _cyc <= float(reg_cyc)
+    roe_med = roe_med or {}
+    roe_medio_val = pd.Series(df.index.map(lambda t: roe_med.get(t, np.nan)), index=df.index)
+    roe_eff = pd.to_numeric(df["roe"], errors="coerce").copy()
+    _use_med = is_reg & roe_medio_val.notna()
+    roe_eff[_use_med] = roe_medio_val[_use_med]              # regulado: ROE médio 5a
+
     nq = {
-        "roe": _rank_score(df["roe"], True),
+        "roe": _rank_score(roe_eff, True),
         "roic": _rank_score(df["roic"], True),
         "mrg_liq": _rank_score(df["mrg_liq"], True),
     }
@@ -116,6 +130,11 @@ def score_universe(funds: list[Fundamentals], pl_min: float = 2.0,
         "peg": _rank_score(df["peg"], False),
         "ev_ebitda": _rank_score(df["ev_ebitda_s"], False),
     }
+    # pesos: padrão (média simples) e regulado (reforço em EBITDA/caixa; ROE contábil menor)
+    WQ_STD = {"roe": 1 / 3, "roic": 1 / 3, "mrg_liq": 1 / 3}
+    WQ_REG = {"roe": 0.25, "roic": 0.45, "mrg_liq": 0.30}
+    WV_STD = {"pl": 0.25, "pvp": 0.25, "peg": 0.25, "ev_ebitda": 0.25}
+    WV_REG = {"pl": 0.18, "pvp": 0.24, "peg": 0.13, "ev_ebitda": 0.45}
     # Alavancagem AJUSTADA pelo retorno: DL/EBITDA ÷ (ROIC/Selic). Quando o ROIC supera o
     # custo de capital (Selic), a dívida "pesa menos"; quando fica abaixo, pesa mais. Assim o
     # Safety cruza ROIC com dívida líquida. Fallback ao DL/EBITDA cru quando falta ROIC.
@@ -134,10 +153,18 @@ def score_universe(funds: list[Fundamentals], pl_min: float = 2.0,
     def block_mean(dct: dict[str, pd.Series]) -> pd.Series:
         return pd.concat(dct.values(), axis=1).mean(axis=1, skipna=True)
 
-    df["quality"] = block_mean(nq)
-    df["value"] = block_mean(nv)
+    def wblock(comps: dict, weights: dict) -> pd.Series:
+        # média ponderada renormalizando os pesos sobre os componentes não-NaN de cada linha
+        num = sum(comps[k].fillna(0.0) * weights[k] for k in comps)
+        den = sum(comps[k].notna().astype(float) * weights[k] for k in comps)
+        return num / den.replace(0.0, np.nan)
+
+    # Quality/Value: pesos padrão, mas regulados usam os pesos "reg" (reforço EBITDA/caixa)
+    df["quality"] = wblock(nq, WQ_STD).where(~is_reg, wblock(nq, WQ_REG))
+    df["value"] = wblock(nv, WV_STD).where(~is_reg, wblock(nv, WV_REG))
     df["safety"] = block_mean(ns)
     df["dividend"] = nd
+    df["regulado"] = is_reg                                  # flag p/ transparência
 
     df["investment"] = [
         _wmean({"quality": q, "value": v, "safety": s, "dividend": d}, W)
