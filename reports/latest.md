@@ -31,12 +31,12 @@
 | VIVA3    | BOVA11+SMALL11          | Consumo discricionário       |        62.94 |     77.07 |   54.32 |    67.3  |      17.36 | Não             | Em Baixa |   20.87 |       -8.62522 |
 | BBSE3    | BOVA11                  | Insurance                    |        62.26 |     68.12 |   31.94 |    61    |      91.67 | Não             | Em Baixa |   36.95 |       -8.80658 |
 | TOTS3    | BOVA11+SMALL11+Wishlist | Tecnologia de informação     |        62.04 |     87.02 |   32.76 |    50.29 |      14.58 | Pivô de alta    | Lateral  |   30.2  |       -7.1055  |
-| ISAE4    | BOVA11                  | Serviços públicos            |        60.86 |     61.52 |   54.21 |    60.65 |      76.39 | Não             | Em Baixa |   25.55 |      -10.4452  |
 | BBDC3    | BOVA11                  | Produtos financeiros         |        60.66 |     51.12 |   66.48 |    66.43 |      74.31 | Não             | Em Baixa |   14.51 |      -11.3275  |
 | ITSA4    | BOVA11                  | Financial Services           |        60.36 |     61.3  |   47.33 |   nan    |      79.86 | Não             | Em Baixa |   12.49 |      -10.0144  |
+| ABEV3    | BOVA11                  | Bens de primeira necessidade |        59.92 |     81.49 |   17.87 |    67.11 |      53.47 | Não             | Em Baixa |   14.75 |       -8.3851  |
 | ITUB4    | BOVA11                  | Produtos financeiros         |        59.88 |     59.17 |   38.79 |    70.71 |      67.36 | Não             | Em Baixa |   39    |       -9.65948 |
-| ABEV3    | BOVA11                  | Bens de primeira necessidade |        59.27 |     79.31 |   18.71 |    67.11 |      53.47 | Não             | Em Baixa |   14.75 |       -8.3851  |
 | BBDC4    | BOVA11                  | Produtos financeiros         |        58.77 |     51.12 |   58.39 |    66.43 |      72.22 | Não             | Em Baixa |   16.54 |      -11.6382  |
+| ISAE4    | BOVA11                  | Serviços públicos            |        58.68 |     59.56 |   47.52 |    60.65 |      76.39 | Não             | Em Baixa |   25.55 |      -10.4452  |
 
 ## 🏅 Top 15 por Investment Score (universo todo)
 
