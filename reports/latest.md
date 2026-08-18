@@ -19,11 +19,11 @@
 | CURY3    | BOVA11+SMALL11          | Consumo discricionário       |        70.21 |     90.44 |   31.08 |    56.97 |      86.11 | Não             | Em Baixa |   31.05 |       -3.92946 |
 | PETR4    | BOVA11                  | Energia                      |        69.57 |     87.42 |   82.59 |    36.61 |     nan    | Pivô de alta    | Em Alta  |   42.6  |       -1.0453  |
 | PLPL3    | SMALL11                 | Consumo discricionário       |        69.26 |     79.77 |   81.37 |    51.92 |      60.42 | Não             | Em Baixa |    6.68 |      -12.9074  |
-| CXSE3    | BOVA11                  | Insurance                    |        68.99 |     64.67 |   33.99 |   100    |      81.25 | Não             | Em Baixa |   17.95 |      -14.0941  |
+| CXSE3    | BOVA11                  | Insurance                    |        68.99 |     64.67 |   33.99 |   100    |      81.25 | Não             | Em Baixa |   17.95 |      -10.8674  |
 | VLID3    | SMALL11                 | Bens Industriais             |        68.66 |     64.85 |   73.91 |    67    |      73.61 | Não             | Em Baixa |   16.62 |       -9.97011 |
-| PETR3    | BOVA11                  | Energia                      |        68.52 |     87.42 |   78.14 |    36.61 |     nan    | Pivô de alta    | Em Alta  |   47.53 |       -2.24188 |
+| PETR3    | BOVA11                  | Energia                      |        68.52 |     87.42 |   78.14 |    36.61 |     nan    | Pivô de alta    | Em Alta  |   47.53 |       -3.07912 |
 | LAVV3    | SMALL11                 | Imobiliário                  |        67.3  |     67.2  |   57.27 |    55.29 |      94.44 | Não             | Em Baixa |    9.44 |      -10.6906  |
-| TGMA3    | SMALL11                 | Bens Industriais             |        67.17 |     79.33 |   33.92 |    70.78 |      83.33 | Rompimento      | Em Alta  |   33.95 |        1.34329 |
+| TGMA3    | SMALL11                 | Bens Industriais             |        67.17 |     79.33 |   33.92 |    70.78 |      83.33 | Rompimento      | Em Alta  |   33.95 |        0.74184 |
 | DIRR3    | BOVA11+SMALL11          | Consumo discricionário       |        66.22 |     72.33 |   51.64 |    54.97 |      90.97 | Não             | Em Baixa |   10.3  |      -13.0068  |
 | LREN3    | BOVA11+SMALL11          | Consumo discricionário       |        66.12 |     69.99 |   71.01 |    56.66 |      48.61 | Não             | Em Baixa |   10.64 |      -23.4532  |
 | MULT3    | BOVA11+SMALL11          | Imobiliário                  |        63.42 |     87.31 |   40.42 |    44.53 |      39.58 | Não             | Em Baixa |   26.38 |       -9.25353 |
@@ -35,7 +35,7 @@
 | ABEV3    | BOVA11                  | Bens de primeira necessidade |        60.2  |     81.39 |   19.15 |    67.33 |      53.47 | Não             | Em Baixa |   14.73 |       -8.50932 |
 | ITUB4    | BOVA11                  | Produtos financeiros         |        60.17 |     59.01 |   40.47 |    70.71 |      67.36 | Não             | Em Baixa |   38.19 |      -11.5358  |
 | BBDC4    | BOVA11                  | Produtos financeiros         |        59.12 |     50.79 |   60.61 |    66.43 |      72.22 | Não             | Em Baixa |   16.12 |      -13.882   |
-| ISAE4    | BOVA11                  | Serviços públicos            |        58.61 |     59.3  |   47.4  |    60.9  |      76.39 | Não             | Em Baixa |   25.33 |       -5.62593 |
+| ISAE4    | BOVA11                  | Serviços públicos            |        58.61 |     59.3  |   47.4  |    60.9  |      76.39 | Não             | Em Baixa |   25.33 |       -5.80141 |
 
 ## 🏅 Top 15 por Investment Score (universo todo)
 
@@ -49,7 +49,7 @@
 | POMO4    | BOVA11+SMALL11 | Bens Industriais       |        73.09 |     80.97 |   74.86 |    52.17 |      80.56 | Não             | Em Baixa |
 | PSSA3    | BOVA11         | Insurance              |        73.06 |     76.67 |   52.33 |   100    |      51.39 | Não             | Em Baixa |
 | MILS3    | SMALL11        | Bens Industriais       |        70.81 |     85.54 |   53.68 |    58.98 |      54.86 | Não             | Em Alta  |
-| VTRU3    | SMALL11        | Consumo discricionário |        70.79 |     87.06 |   89.86 |    49.22 |       7.64 | Não             | Lateral  |
+| VTRU3    | SMALL11        | Consumo discricionário |        70.79 |     87.06 |   89.86 |    49.22 |       7.64 | Não             | Em Baixa |
 | RIAA3    | SMALL11        | Consumo discricionário |        70.42 |     66.53 |   93.44 |    39.79 |      92.36 | Não             | Em Baixa |
 | LEVE3    | SMALL11        | Consumo discricionário |        70.4  |     86.44 |   56.81 |    37.18 |      99.31 | Não             | Lateral  |
 | CURY3    | BOVA11+SMALL11 | Consumo discricionário |        70.21 |     90.44 |   31.08 |    56.97 |      86.11 | Não             | Em Baixa |
