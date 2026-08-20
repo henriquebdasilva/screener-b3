@@ -13,19 +13,19 @@
 | MDNE3    | SMALL11                 | Imobiliário                  |        75.48 |     73.28 |   77.43 |    63.41 |      79.02 | Não             | Em Baixa |   22.71 |      -9.55795  |
 | POMO3    | SMALL11                 | Bens Industriais             |        74.29 |     81.07 |   76.74 |    51.82 |      90.21 | Não             | Em Baixa |    4.11 |     -17.6353   |
 | PSSA3    | BOVA11                  | Insurance                    |        73.31 |     76.51 |   53.92 |   100    |      51.05 | Não             | Em Baixa |   46.53 |     -14.3882   |
-| POMO4    | BOVA11+SMALL11          | Bens Industriais             |        72.88 |     81.07 |   74.03 |    51.82 |      80.42 | Não             | Em Baixa |    4.45 |     -17.2863   |
+| POMO4    | BOVA11+SMALL11          | Bens Industriais             |        72.88 |     81.07 |   74.03 |    51.82 |      80.42 | Não             | Em Baixa |    4.45 |     -17.1322   |
 | CURY3    | BOVA11+SMALL11          | Consumo discricionário       |        71.1  |     90.6  |   35.27 |    56.68 |      86.01 | Não             | Lateral  |   29.95 |      -7.33292  |
 | MILS3    | SMALL11                 | Bens Industriais             |        70.7  |     85.44 |   53.85 |    58.49 |      54.55 | Pivô de alta    | Em Alta  |   15.66 |      -0.94877  |
 | LEVE3    | SMALL11                 | Consumo discricionário       |        70.5  |     86.35 |   57.93 |    36.62 |      99.3  | Não             | Lateral  |   31.88 |      -6.2353   |
 | PETR4    | BOVA11                  | Energia                      |        69.38 |     87.34 |   82.29 |    36.18 |     nan    | Rompimento      | Em Alta  |   44.32 |       2.80677  |
 | PLPL3    | SMALL11                 | Consumo discricionário       |        69.1  |     79.63 |   81.32 |    51.47 |      60.14 | Não             | Em Baixa |    6.73 |     -10.2667   |
-| CXSE3    | BOVA11                  | Insurance                    |        68.97 |     64.66 |   33.98 |   100    |      81.12 | Não             | Em Baixa |   18.18 |      -9.72532  |
+| CXSE3    | BOVA11                  | Insurance                    |        68.97 |     64.66 |   33.98 |   100    |      81.12 | Não             | Em Baixa |   18.18 |      -8.97045  |
 | PETR3    | BOVA11                  | Energia                      |        68.39 |     87.34 |   78.08 |    36.18 |     nan    | Rompimento      | Em Alta  |   49.41 |       1.62485  |
 | VLID3    | SMALL11                 | Bens Industriais             |        68.29 |     64.61 |   73.22 |    66.71 |      72.73 | Não             | Em Baixa |   17.03 |      -7.74916  |
 | LAVV3    | SMALL11                 | Imobiliário                  |        67.44 |     67.43 |   57.75 |    55    |      94.41 | Não             | Em Baixa |    9.6  |      -9.17691  |
 | TGMA3    | SMALL11                 | Bens Industriais             |        67.11 |     79.41 |   33.95 |    70.28 |      83.22 | Fundo duplo     | Em Alta  |   33.8  |      -0.792487 |
 | DIRR3    | BOVA11+SMALL11          | Consumo discricionário       |        66.84 |     72.59 |   54.32 |    54.73 |      90.91 | Não             | Em Baixa |   10.41 |     -11.8544   |
-| LREN3    | BOVA11+SMALL11          | Consumo discricionário       |        66.52 |     69.79 |   73.33 |    56.72 |      48.25 | Não             | Em Baixa |   10.5  |     -24.4604   |
+| LREN3    | BOVA11+SMALL11          | Consumo discricionário       |        66.52 |     69.79 |   73.33 |    56.72 |      48.25 | Não             | Em Baixa |   10.5  |     -24.1877   |
 | MULT3    | BOVA11+SMALL11          | Imobiliário                  |        63.46 |     87.22 |   41.25 |    44.14 |      39.16 | Não             | Em Baixa |   26.35 |      -9.35672  |
 | VIVA3    | BOVA11+SMALL11          | Consumo discricionário       |        62.84 |     77.03 |   55.14 |    66.07 |      16.78 | Não             | Em Baixa |   21.29 |      -6.78634  |
 | TOTS3    | BOVA11+SMALL11+Wishlist | Tecnologia de informação     |        61.55 |     86.79 |   31.53 |    49.78 |      13.99 | Fundo duplo     | Lateral  |   31.29 |      -3.75268  |
