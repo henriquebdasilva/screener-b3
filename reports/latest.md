@@ -1,58 +1,58 @@
-# Screener B3 — 2026-08-20
+# Screener B3 — 2026-08-21
 
 *Parâmetros:* `{'universe': 'both', 'top_quantile': 0.5, 'min_invest': None, 'lookback': 20, 'vol_mult': 1.5, 'require_contraction': False}`
 
 > Material analítico gerado automaticamente. **Não é recomendação de investimento.** Preços/fundamentos de fontes públicas podem conter erros ou defasagem. O rompimento/pivô é um port do algoritmo de referência (`breakout.py`) e serve como **flag de timing**, não como filtro.
 
-## Papéis nos critérios fundamentalistas — 28 (5 com oportunidade gráfica)
+## Papéis nos critérios fundamentalistas — 28 (3 com oportunidade gráfica)
 
 | ticker   | origem                  | setor                        |   investment |   quality |   value |   safety |   dividend | oport_grafica   | trend    |   close |   pct_to_level |
 |----------|-------------------------|------------------------------|--------------|-----------|---------|----------|------------|-----------------|----------|---------|----------------|
-| JHSF3    | SMALL11                 | Imobiliário                  |        78.06 |     87.64 |   81    |    46.36 |      69.93 | Não             | Em Baixa |    9.99 |     -10.4036   |
-| VULC3    | SMALL11                 | Consumo discricionário       |        76.39 |     88.33 |   59.84 |    66.13 |      95.8  | Não             | Em Baixa |   13.51 |      -4.72497  |
-| MDNE3    | SMALL11                 | Imobiliário                  |        75.48 |     73.28 |   77.43 |    63.41 |      79.02 | Não             | Em Baixa |   22.71 |      -9.55795  |
-| POMO3    | SMALL11                 | Bens Industriais             |        74.29 |     81.07 |   76.74 |    51.82 |      90.21 | Não             | Em Baixa |    4.11 |     -17.6353   |
-| PSSA3    | BOVA11                  | Insurance                    |        73.31 |     76.51 |   53.92 |   100    |      51.05 | Não             | Em Baixa |   46.53 |     -14.3882   |
-| POMO4    | BOVA11+SMALL11          | Bens Industriais             |        72.88 |     81.07 |   74.03 |    51.82 |      80.42 | Não             | Em Baixa |    4.45 |     -17.1322   |
-| CURY3    | BOVA11+SMALL11          | Consumo discricionário       |        71.1  |     90.6  |   35.27 |    56.68 |      86.01 | Não             | Lateral  |   29.95 |      -7.33292  |
-| MILS3    | SMALL11                 | Bens Industriais             |        70.7  |     85.44 |   53.85 |    58.49 |      54.55 | Pivô de alta    | Em Alta  |   15.66 |      -0.94877  |
-| LEVE3    | SMALL11                 | Consumo discricionário       |        70.5  |     86.35 |   57.93 |    36.62 |      99.3  | Não             | Lateral  |   31.88 |      -6.2353   |
-| PETR4    | BOVA11                  | Energia                      |        69.38 |     87.34 |   82.29 |    36.18 |     nan    | Rompimento      | Em Alta  |   44.32 |       2.80677  |
-| PLPL3    | SMALL11                 | Consumo discricionário       |        69.1  |     79.63 |   81.32 |    51.47 |      60.14 | Não             | Em Baixa |    6.73 |     -10.2667   |
-| CXSE3    | BOVA11                  | Insurance                    |        68.97 |     64.66 |   33.98 |   100    |      81.12 | Não             | Em Baixa |   18.18 |      -8.97045  |
-| PETR3    | BOVA11                  | Energia                      |        68.39 |     87.34 |   78.08 |    36.18 |     nan    | Rompimento      | Em Alta  |   49.41 |       1.62485  |
-| VLID3    | SMALL11                 | Bens Industriais             |        68.29 |     64.61 |   73.22 |    66.71 |      72.73 | Não             | Em Baixa |   17.03 |      -7.74916  |
-| LAVV3    | SMALL11                 | Imobiliário                  |        67.44 |     67.43 |   57.75 |    55    |      94.41 | Não             | Em Baixa |    9.6  |      -9.17691  |
-| TGMA3    | SMALL11                 | Bens Industriais             |        67.11 |     79.41 |   33.95 |    70.28 |      83.22 | Fundo duplo     | Em Alta  |   33.8  |      -0.792487 |
-| DIRR3    | BOVA11+SMALL11          | Consumo discricionário       |        66.84 |     72.59 |   54.32 |    54.73 |      90.91 | Não             | Em Baixa |   10.41 |     -11.8544   |
-| LREN3    | BOVA11+SMALL11          | Consumo discricionário       |        66.52 |     69.79 |   73.33 |    56.72 |      48.25 | Não             | Em Baixa |   10.5  |     -24.1877   |
-| MULT3    | BOVA11+SMALL11          | Imobiliário                  |        63.46 |     87.22 |   41.25 |    44.14 |      39.16 | Não             | Em Baixa |   26.35 |      -9.35672  |
-| VIVA3    | BOVA11+SMALL11          | Consumo discricionário       |        62.84 |     77.03 |   55.14 |    66.07 |      16.78 | Não             | Em Baixa |   21.29 |      -6.78634  |
-| TOTS3    | BOVA11+SMALL11+Wishlist | Tecnologia de informação     |        61.55 |     86.79 |   31.53 |    49.78 |      13.99 | Fundo duplo     | Lateral  |   31.29 |      -3.75268  |
-| ITSA4    | BOVA11                  | Financial Services           |        60.91 |     61.32 |   49.38 |   nan    |      79.72 | Não             | Em Baixa |   12.19 |     -12.1758   |
-| BBDC3    | BOVA11                  | Produtos financeiros         |        60.83 |     50.46 |   68.53 |    66.43 |      74.13 | Não             | Em Baixa |   13.93 |     -13.6618   |
-| BBSE3    | BOVA11                  | Insurance                    |        60.68 |     68.14 |   24.52 |    61    |      91.61 | Não             | Em Baixa |   36.55 |      -8.70025  |
-| ITUB4    | BOVA11                  | Produtos financeiros         |        60.17 |     58.96 |   40.65 |    70.71 |      67.13 | Não             | Em Baixa |   37.51 |     -13.111    |
-| ABEV3    | BOVA11                  | Bens de primeira necessidade |        60.04 |     81.47 |   19.22 |    66.34 |      53.15 | Não             | Em Baixa |   14.9  |      -6.64161  |
-| BBDC4    | BOVA11                  | Produtos financeiros         |        58.96 |     50.46 |   60.81 |    66.43 |      71.33 | Não             | Em Baixa |   15.75 |     -14.8607   |
-| ISAE4    | BOVA11                  | Serviços públicos            |        58.53 |     59.13 |   47.96 |    60.22 |      76.22 | Não             | Em Baixa |   25.5  |      -4.99255  |
+| JHSF3    | SMALL11                 | Imobiliário                  |        77.86 |     87.64 |   81.55 |    44.53 |      69.93 | Não             | Em Baixa |   10.16 |     -8.87892   |
+| VULC3    | SMALL11                 | Consumo discricionário       |        76.61 |     88.33 |   61.07 |    65.93 |      95.8  | Não             | Em Baixa |   13.67 |     -3.59662   |
+| MDNE3    | SMALL11                 | Imobiliário                  |        76.01 |     73.73 |   78.7  |    64.28 |      78.32 | Não             | Em Baixa |   23.51 |     -6.37196   |
+| POMO3    | SMALL11                 | Bens Industriais             |        73.88 |     81.07 |   74.46 |    52.23 |      90.21 | Não             | Em Baixa |    4.18 |    -16.2325    |
+| PSSA3    | BOVA11                  | Insurance                    |        73.29 |     76.51 |   53.84 |   100    |      51.05 | Não             | Em Baixa |   46.57 |    -14.8629    |
+| CURY3    | BOVA11+SMALL11          | Consumo discricionário       |        72.17 |     90.6  |   40.17 |    56.88 |      86.01 | Não             | Lateral  |   29.9  |     -7.48762   |
+| POMO4    | BOVA11+SMALL11          | Bens Industriais             |        72.13 |     81.07 |   70.15 |    52.23 |      80.42 | Não             | Em Baixa |    4.47 |    -16.7598    |
+| LEVE3    | SMALL11                 | Consumo discricionário       |        70.5  |     86.35 |   57.74 |    36.82 |      99.3  | Pivô de alta    | Em Alta  |   32.22 |     -5.23529   |
+| MILS3    | SMALL11                 | Bens Industriais             |        70.45 |     85.44 |   53.13 |    57.86 |      54.55 | Não             | Em Alta  |   15.65 |     -1.01202   |
+| PETR4    | BOVA11                  | Energia                      |        69.35 |     87.34 |   82.18 |    36.18 |     nan    | Não             | Em Alta  |   44.3  |     -0.0451274 |
+| PLPL3    | SMALL11                 | Consumo discricionário       |        69.24 |     79.63 |   82.59 |    51.08 |      59.44 | Não             | Em Baixa |    6.9  |     -8         |
+| CXSE3    | BOVA11                  | Insurance                    |        68.94 |     64.66 |   33.84 |   100    |      81.12 | Não             | Em Baixa |   18.25 |     -8.25894   |
+| VLID3    | SMALL11                 | Bens Industriais             |        68.29 |     64.39 |   73.89 |    66.71 |      72.03 | Não             | Em Baixa |   17.33 |     -6.12407   |
+| PETR3    | BOVA11                  | Energia                      |        68.29 |     87.34 |   77.65 |    36.18 |     nan    | Não             | Em Alta  |   49.34 |     -0.141671  |
+| LAVV3    | SMALL11                 | Imobiliário                  |        67.25 |     67.2  |   57.12 |    55.2  |      94.41 | Não             | Em Baixa |    9.74 |     -7.85241   |
+| TGMA3    | SMALL11                 | Bens Industriais             |        67.03 |     79.41 |   33.59 |    70.28 |      83.22 | Rompimento      | Em Alta  |   34.38 |      0.909895  |
+| DIRR3    | BOVA11+SMALL11          | Consumo discricionário       |        67.03 |     72.59 |   55.52 |    54.33 |      90.91 | Não             | Em Baixa |   10.48 |    -11.2616    |
+| LREN3    | BOVA11+SMALL11          | Consumo discricionário       |        66.67 |     69.79 |   74.19 |    56.53 |      48.25 | Não             | Em Baixa |   10.99 |    -20.6498    |
+| MULT3    | BOVA11+SMALL11          | Imobiliário                  |        63.51 |     87.22 |   41.36 |    43.94 |      39.86 | Não             | Em Baixa |   26.86 |     -7.60234   |
+| VIVA3    | BOVA11+SMALL11          | Consumo discricionário       |        62.39 |     77.03 |   53.17 |    65.87 |      16.78 | Não             | Em Baixa |   21.52 |     -5.77933   |
+| TOTS3    | BOVA11+SMALL11+Wishlist | Tecnologia de informação     |        61.58 |     86.79 |   32.03 |    49.34 |      13.99 | Pivô de alta    | Em Alta  |   32.18 |     -1.01507   |
+| BBSE3    | BOVA11                  | Insurance                    |        61.06 |     68.14 |   26.33 |    61    |      91.61 | Não             | Em Baixa |   37.19 |     -7.10157   |
+| BBDC3    | BOVA11                  | Produtos financeiros         |        61.05 |     50.46 |   69.81 |    66.43 |      73.43 | Não             | Em Baixa |   14.33 |    -11.1826    |
+| ITSA4    | BOVA11                  | Financial Services           |        60.8  |     61.32 |   48.98 |   nan    |      79.72 | Não             | Em Baixa |   12.5  |     -9.94236   |
+| ITUB4    | BOVA11                  | Produtos financeiros         |        60.43 |     58.96 |   41.9  |    70.71 |      67.13 | Não             | Em Baixa |   38.6  |    -10.5861    |
+| ABEV3    | BOVA11                  | Bens de primeira necessidade |        59.91 |     81.47 |   18.59 |    66.34 |      53.15 | Não             | Em Baixa |   15    |     -6.19137   |
+| BBDC4    | BOVA11                  | Produtos financeiros         |        59.05 |     50.46 |   61.27 |    66.43 |      71.33 | Não             | Em Baixa |   16.24 |    -12.2119    |
+| ISAE4    | BOVA11                  | Serviços públicos            |        58.56 |     59.13 |   48.17 |    60.47 |      75.52 | Não             | Em Baixa |   26.02 |     -3.2354    |
 
 ## 🏅 Top 15 por Investment Score (universo todo)
 
 | ticker   | origem         | setor                  |   investment |   quality |   value |   safety |   dividend | oport_grafica   | trend    |
 |----------|----------------|------------------------|--------------|-----------|---------|----------|------------|-----------------|----------|
-| JHSF3    | SMALL11        | Imobiliário            |        78.06 |     87.64 |   81    |    46.36 |      69.93 | Não             | Em Baixa |
-| VULC3    | SMALL11        | Consumo discricionário |        76.39 |     88.33 |   59.84 |    66.13 |      95.8  | Não             | Em Baixa |
-| MDNE3    | SMALL11        | Imobiliário            |        75.48 |     73.28 |   77.43 |    63.41 |      79.02 | Não             | Em Baixa |
-| POMO3    | SMALL11        | Bens Industriais       |        74.29 |     81.07 |   76.74 |    51.82 |      90.21 | Não             | Em Baixa |
-| PSSA3    | BOVA11         | Insurance              |        73.31 |     76.51 |   53.92 |   100    |      51.05 | Não             | Em Baixa |
-| POMO4    | BOVA11+SMALL11 | Bens Industriais       |        72.88 |     81.07 |   74.03 |    51.82 |      80.42 | Não             | Em Baixa |
-| ABCB10   | SMALL11        | Produtos financeiros   |        72.81 |     78.69 |   73.47 |   nan    |     nan    | Não             |          |
-| CURY3    | BOVA11+SMALL11 | Consumo discricionário |        71.1  |     90.6  |   35.27 |    56.68 |      86.01 | Não             | Lateral  |
-| MILS3    | SMALL11        | Bens Industriais       |        70.7  |     85.44 |   53.85 |    58.49 |      54.55 | Pivô de alta    | Em Alta  |
-| VTRU3    | SMALL11        | Consumo discricionário |        70.65 |     86.97 |   89.9  |    48.88 |       6.99 | Não             | Lateral  |
-| LEVE3    | SMALL11        | Consumo discricionário |        70.5  |     86.35 |   57.93 |    36.62 |      99.3  | Não             | Lateral  |
-| RIAA3    | SMALL11        | Consumo discricionário |        70.42 |     66.53 |   93.81 |    39.37 |      92.31 | Não             | Em Baixa |
-| BRSR6    | SMALL11        | Produtos financeiros   |        69.68 |     47.78 |   91.37 |    90.71 |      84.62 | Não             | Em Baixa |
-| PETR4    | BOVA11         | Energia                |        69.38 |     87.34 |   82.29 |    36.18 |     nan    | Rompimento      | Em Alta  |
-| PLPL3    | SMALL11        | Consumo discricionário |        69.1  |     79.63 |   81.32 |    51.47 |      60.14 | Não             | Em Baixa |
+| JHSF3    | SMALL11        | Imobiliário            |        77.86 |     87.64 |   81.55 |    44.53 |      69.93 | Não             | Em Baixa |
+| VULC3    | SMALL11        | Consumo discricionário |        76.61 |     88.33 |   61.07 |    65.93 |      95.8  | Não             | Em Baixa |
+| MDNE3    | SMALL11        | Imobiliário            |        76.01 |     73.73 |   78.7  |    64.28 |      78.32 | Não             | Em Baixa |
+| POMO3    | SMALL11        | Bens Industriais       |        73.88 |     81.07 |   74.46 |    52.23 |      90.21 | Não             | Em Baixa |
+| PSSA3    | BOVA11         | Insurance              |        73.29 |     76.51 |   53.84 |   100    |      51.05 | Não             | Em Baixa |
+| CURY3    | BOVA11+SMALL11 | Consumo discricionário |        72.17 |     90.6  |   40.17 |    56.88 |      86.01 | Não             | Lateral  |
+| POMO4    | BOVA11+SMALL11 | Bens Industriais       |        72.13 |     81.07 |   70.15 |    52.23 |      80.42 | Não             | Em Baixa |
+| VTRU3    | SMALL11        | Consumo discricionário |        70.75 |     86.97 |   90.24 |    49.07 |       6.99 | Rompimento      | Em Alta  |
+| LEVE3    | SMALL11        | Consumo discricionário |        70.5  |     86.35 |   57.74 |    36.82 |      99.3  | Pivô de alta    | Em Alta  |
+| MILS3    | SMALL11        | Bens Industriais       |        70.45 |     85.44 |   53.13 |    57.86 |      54.55 | Não             | Em Alta  |
+| RIAA3    | SMALL11        | Consumo discricionário |        70.39 |     66.53 |   93.81 |    39.18 |      92.31 | Não             | Em Baixa |
+| BRSR6    | SMALL11        | Produtos financeiros   |        69.75 |     47.78 |   91.71 |    90.71 |      84.62 | Não             | Em Baixa |
+| PETR4    | BOVA11         | Energia                |        69.35 |     87.34 |   82.18 |    36.18 |     nan    | Não             | Em Alta  |
+| PLPL3    | SMALL11        | Consumo discricionário |        69.24 |     79.63 |   82.59 |    51.08 |      59.44 | Não             | Em Baixa |
+| ABCB10   | SMALL11        | Produtos financeiros   |        69.08 |     78.69 |   61.22 |   nan    |     nan    | Não             |          |
