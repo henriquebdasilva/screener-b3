@@ -143,7 +143,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         if use_avg_dy and pd.notna(avg_dy.get(f.ticker, float("nan"))):
             f.dy_medio = avg_dy[f.ticker]
 
-    scores = score_universe(funds, pl_min=suspect_pl_min, dy_max=suspect_dy_max)
+    scores = score_universe(funds, pl_min=suspect_pl_min, dy_max=suspect_dy_max,
+                            selic=selic, roe_med=roe_med, reg_cyc=defensive_lev_cyc)
     if scores.empty:
         print("Sem dados fundamentalistas — abortando.")
         return None
@@ -463,7 +464,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     cols = [
             "origem", "grupo", "setor", "investment", "investment_base", "consistencia",
             "basileia", "solvencia", "ciclicidade", "dado_suspeito",
-            "quality", "value", "safety", "dividend",
+            "quality", "value", "safety", "dividend", "regulado",
             "rank_invest", "oportunidade_grafica", "criterios_ok", "criterios_aplicaveis",
             "passa_checklist", "mais_5a_bolsa", "sem_prejuizo_anual", "lucro_20t",
             "div_ge5_5a", "div_sem_corte", "roe_ge_10", "divida_menor_patrim", "cresc_receita_5a",
@@ -473,7 +474,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "margem_ok", "roe_ok",
             "alavancagem_ok", "div_liq_patrim", "nde_ok",
             "market_cap", "pl", "pvp", "dy", "dy_teto", "roe", "roe_medio", "roic", "mrg_liq",
-            "ev_ebitda", "div_liq_ebitda",
+            "ev_ebitda", "div_liq_ebitda", "lev_roic_adj",
             "liq_corr", "div_patrim", "peg", "payout", "cresc_5a", "pl_fut",
             "roa", "liq_geral", "grau_endiv", "indep_fin",
             "min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
@@ -528,6 +529,15 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             from market import market_summary, market_mood
             resumo = market_summary(selic)          # Selic + índices (YTD/MTD)
             humor = market_mood(full)               # % alta/baixa por índice e setor
+            # Put/Call ratio (COTAHIST/B3) por ativo, setor e mercado
+            opcoes_data = None
+            try:
+                from opcoes import fetch_opcoes
+                tk_setor = {str(t): full.loc[t, "setor"] for t in full.index
+                            if "setor" in full.columns}
+                opcoes_data = fetch_opcoes(ticker_setor=tk_setor)
+            except Exception as e:
+                print(f"[opcoes] indisponível: {e}")
             # panorama macro (BCB/Focus/yfinance) + Índice de Regime Brasil
             macro_data, regime = {}, {}
             try:
@@ -576,14 +586,14 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                        defensive_cyc=defensive_max_cyc,
                                        setor_medians=setor_medians, macro=macro_data,
                                        regime=regime, wishlist_df=wl_df, carteira_df=ca_df,
-                                       for_pdf=True)
+                                       for_pdf=True, opcoes=opcoes_data)
                 pdf_path = html_to_pdf(full_html, f"{outdir}/relatorio_{hoje}.pdf")
 
             if pdf_path:            # corpo curto + relatório no PDF anexo
                 from mailer import build_email_body
                 html = build_email_body(hoje, meta_dict, resumo, humor,
                                         len(selecionados), n_graf, macro=macro_data,
-                                        regime=regime, tem_pdf=True)
+                                        regime=regime, tem_pdf=True, opcoes=opcoes_data)
                 print("[email] enviando corpo curto + relatório completo em PDF.")
             else:                   # fallback: relatório no corpo (com guarda de tamanho)
                 print("[email] PDF indisponível — enviando relatório no corpo (com guarda "
@@ -591,7 +601,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 html = build_html(selecionados, hoje, meta_dict, market=resumo, mood=humor,
                                   group_pct=gpct, defensive_cyc=defensive_max_cyc,
                                   setor_medians=setor_medians, macro=macro_data,
-                                  regime=regime, wishlist_df=wl_df, carteira_df=ca_df)
+                                  regime=regime, wishlist_df=wl_df, carteira_df=ca_df,
+                                  opcoes=opcoes_data)
 
             subject = (f"[Screener B3] {len(selecionados)} papéis nos critérios "
                        f"({n_graf} com oportunidade gráfica) — {hoje}")
