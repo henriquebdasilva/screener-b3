@@ -536,6 +536,16 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 tk_setor = {str(t): full.loc[t, "setor"] for t in full.index
                             if "setor" in full.columns}
                 opcoes_data = fetch_opcoes(ticker_setor=tk_setor)
+                from posicoes import fetch_open_interest, fetch_aluguel
+                oi_data = fetch_open_interest(ticker_setor=tk_setor)
+                aluguel_data = fetch_aluguel(ticker_setor=tk_setor)
+                if opcoes_data is not None and oi_data is not None:
+                    opcoes_data["oi"] = oi_data      # anexa o open interest ao pacote de opções
+                elif oi_data is not None:
+                    opcoes_data = {"oi": oi_data}
+                if aluguel_data is not None:
+                    opcoes_data = opcoes_data or {}
+                    opcoes_data["aluguel"] = aluguel_data
             except Exception as e:
                 print(f"[opcoes] indisponível: {e}")
             # panorama macro (BCB/Focus/yfinance) + Índice de Regime Brasil

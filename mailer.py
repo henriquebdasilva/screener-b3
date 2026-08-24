@@ -262,19 +262,44 @@ def _pc_cell(pc) -> str:
     return f'<span style="color:{cor}">{pc:.2f}</span>'
 
 
+def _aluguel_cell(ticker, row) -> str:
+    """% das ações em circulação que estão em aluguel (posição em aberto) = pressão vendedora.
+    Ações em circulação ~ market_cap / preço. Mostra só a quantidade se não der o %."""
+    info = _ALUGUEL.get(str(ticker))
+    if not info or not info.get("qtd"):
+        return '<span class="sub">n/d</span>'
+    qtd = info["qtd"]
+    mcap = row.get("market_cap")
+    preco = row.get("close")
+    try:
+        if mcap and preco and preco > 0:
+            shares = mcap / preco
+            pct = qtd / shares * 100 if shares > 0 else None
+            if pct is not None:
+                cor = "#dc2626" if pct >= 5 else ("#b45309" if pct >= 2 else "#334155")
+                return f'<span style="color:{cor}">{pct:.1f}%</span>'
+    except Exception:
+        pass
+    return f'<span class="sub">{qtd/1e6:.1f}M</span>'      # fallback: milhões de ações
+
+
 def _mood_block(mood: dict, opcoes: dict = None) -> str:
     if not mood or (not mood.get("indices") and not mood.get("setores")):
         return ""
     por_setor = (opcoes or {}).get("por_setor") or {}
+    oi = (opcoes or {}).get("oi") or {}
+    oi_setor = oi.get("por_setor") or {}
     tem_pc = bool(por_setor)
+    tem_oi = bool(oi_setor)
 
-    def linha(nome, b, pc=None, bold=False):
+    def linha(nome, b, pc=None, oi_pc=None, bold=False):
         rot = f"<b>{nome}</b>" if bold else nome
         txt = (f'{b["alta"]}% alta · {b["lateral"]}% lat · {b["baixa"]}% baixa '
                f'<span class="sub">(n={b["n"]})</span>')
         pc_td = f"<td class='r'>{_pc_cell(pc)}</td>" if tem_pc else ""
+        oi_td = f"<td class='r'>{_pc_cell(oi_pc)}</td>" if tem_oi else ""
         return (f"<tr><td>{rot}</td><td>{_breadth_bar(b)}</td>"
-                f"<td>{txt}</td>{pc_td}</tr>")
+                f"<td>{txt}</td>{pc_td}{oi_td}</tr>")
 
     rows = []
     for k, b in (mood.get("indices") or {}).items():
@@ -282,21 +307,31 @@ def _mood_block(mood: dict, opcoes: dict = None) -> str:
     for setor, b in sorted((mood.get("setores") or {}).items(),
                            key=lambda kv: -kv[1]["alta"]):
         pc = (por_setor.get(setor) or {}).get("pc_ratio")
-        rows.append(linha(setor, b, pc=pc))
+        oi_pc = (oi_setor.get(setor) or {}).get("oi_ratio")
+        rows.append(linha(setor, b, pc=pc, oi_pc=oi_pc))
 
-    pc_head = "<th class='r'>P/C opç.</th>" if tem_pc else ""
+    pc_head = "<th class='r'>P/C vol.</th>" if tem_pc else ""
+    oi_head = "<th class='r'>P/C posições</th>" if tem_oi else ""
     head = (f'<tr><th>Grupo / Setor</th><th>Tendência</th>'
-            f'<th>MM21</th>{pc_head}</tr>')
+            f'<th>MM21</th>{pc_head}{oi_head}</tr>')
     termo = ""
     merc = (opcoes or {}).get("mercado") or {}
+    oi_merc = oi.get("mercado") or {}
+    partes = []
     if merc.get("pc_ratio") is not None and not (isinstance(merc["pc_ratio"], float)
                                                  and math.isnan(merc["pc_ratio"])):
         vies = ("defensivo/baixista" if merc["pc_ratio"] >= 1.2
                 else "altista" if merc["pc_ratio"] <= 0.8 else "neutro")
+        partes.append(f'volume {_pc_cell(merc["pc_ratio"])} (viés {vies})')
+    if oi_merc.get("oi_ratio") is not None and not (isinstance(oi_merc["oi_ratio"], float)
+                                                    and math.isnan(oi_merc["oi_ratio"])):
+        partes.append(f'posições em aberto {_pc_cell(oi_merc["oi_ratio"])}')
+    if partes:
         termo = (f'<p style="margin:6px 0 4px"><b>Termômetro de opções (Put/Call):</b> '
-                 f'mercado {_pc_cell(merc["pc_ratio"])} — viés {vies}. '
-                 f'<span class="sub">Volume de puts ÷ calls no pregão (COTAHIST/B3). '
-                 f'&gt;1 = mais proteção/baixa; &lt;1 = mais aposta em alta.</span></p>')
+                 f'mercado — {" · ".join(partes)}. '
+                 f'<span class="sub">Puts ÷ calls. &gt;1 = mais proteção/baixa; &lt;1 = mais '
+                 f'aposta em alta. Volume = giro do dia; posições = open interest (contratos '
+                 f'em aberto, mais estrutural).</span></p>')
     return (f'<h2 style="{_H2}">Humor do mercado</h2>'
             f'<p class="sub" style="margin:0 0 6px">Percentual dos papéis do universo '
             f'(BOVA11 + SMALL11) em alta/lateral/baixa pela média móvel de 21 pregões'
@@ -306,6 +341,7 @@ def _mood_block(mood: dict, opcoes: dict = None) -> str:
 
 _SECTOR_MED = {}
 _PC_ATIVO = {}                      # raiz do ticker -> {pc_ratio, ...} (opções)
+_ALUGUEL = {}                       # ticker -> {qtd, valor} (posição de aluguel em aberto)
 
 
 def _raiz_tk(ticker):
@@ -351,7 +387,8 @@ def _risco_table(df: pd.DataFrame) -> str:
             "<th class='r'>Mín 52s</th><th class='r'>Máx 52s</th>"
             "<th class='r'>vs Min52</th>"
             "<th class='r'>vs MM100</th><th class='r'>Beta</th>"
-            "<th class='r'>Corr.Ibov</th><th class='r'>P/C opç.</th></tr>")
+            "<th class='r'>Corr.Ibov</th><th class='r'>P/C opç.</th>"
+            "<th class='r'>Aluguel</th></tr>")
     linhas = []
     for tk, r in df.iterrows():
         linhas.append(
@@ -360,7 +397,8 @@ def _risco_table(df: pd.DataFrame) -> str:
             f"{cell(r.get('dist_min52'), pct=True, sign=True)}"
             f"{cell(r.get('dist_mm100'), pct=True, sign=True)}"
             f"{num_sign(r.get('beta'))}{num_sign(r.get('corr_ibov'))}"
-            f"<td class='r'>{_pc_cell((_PC_ATIVO.get(_raiz_tk(tk)) or {}).get('pc_ratio'))}</td></tr>")
+            f"<td class='r'>{_pc_cell((_PC_ATIVO.get(_raiz_tk(tk)) or {}).get('pc_ratio'))}</td>"
+            f"<td class='r'>{_aluguel_cell(tk, r)}</td></tr>")
     leg = ('<p class="sub" style="margin:4px 0 0">Preço, Mín 52s e Máx 52s em R$ (mínima e '
            'máxima de 52 semanas). vs Min52 = distância da mínima de 52 semanas; vs MM100 = '
            'posição vs média de 100 dias. <span style="color:#16a34a">Verde/+</span> acima, '
@@ -369,7 +407,10 @@ def _risco_table(df: pd.DataFrame) -> str:
            'mesma direção do índice, <span style="color:#dc2626">−</span> na direção '
            'oposta). P/C opç. = Put/Call ratio do ativo (volume de puts ÷ calls no pregão, '
            'COTAHIST/B3): <span style="color:#dc2626">≥1,2</span> viés baixista, '
-           '<span style="color:#16a34a">≤0,8</span> altista.</p>')
+           '<span style="color:#16a34a">≤0,8</span> altista. Aluguel = % das ações em '
+           'circulação em posição de aluguel em aberto (BDI/B3), proxy de pressão vendedora: '
+           '<span style="color:#dc2626">≥5%</span> alta, <span style="color:#b45309">2–5%</span> '
+           'moderada.</p>')
     return (f'<h3 style="{_H3}">Preço &amp; risco</h3>'
             f'<div class="ind"><table>{head}{"".join(linhas)}</table></div>{leg}')
 
@@ -509,6 +550,8 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
     _SECTOR_MED = setor_medians or {}
     global _PC_ATIVO
     _PC_ATIVO = (opcoes or {}).get("por_ativo") or {}
+    global _ALUGUEL
+    _ALUGUEL = ((opcoes or {}).get("aluguel") or {}).get("por_ativo") or {}
     painel = ""
     if macro:
         try:
@@ -656,6 +699,8 @@ def build_email_body(hoje: str, meta: dict, market: dict, mood: dict, n_sel: int
     global _SECTOR_MED
     global _PC_ATIVO
     _PC_ATIVO = (opcoes or {}).get("por_ativo") or {}
+    global _ALUGUEL
+    _ALUGUEL = ((opcoes or {}).get("aluguel") or {}).get("por_ativo") or {}
     painel = ""
     if macro:
         try:
