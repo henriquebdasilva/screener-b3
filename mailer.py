@@ -262,6 +262,39 @@ def _pc_cell(pc) -> str:
     return f'<span style="color:{cor}">{pc:.2f}</span>'
 
 
+def _fmt_strike(s):
+    if s is None or (isinstance(s, float) and math.isnan(s)):
+        return "?"
+    return f"{s:.2f}".rstrip("0").rstrip(".") if s < 1000 else f"{s:.0f}"
+
+
+def _dest_oi_cell(ticker) -> str:
+    """Opção de maior open interest do ativo: tipo + strike (OI em milhões embaixo)."""
+    d = _DEST_OI.get(_raiz_tk(ticker))
+    if not d or d.get("oi") is None:
+        return '<span class="sub">n/d</span>'
+    tp = "CALL" if d.get("tipo") == "C" else "PUT"
+    cor = "#16a34a" if d.get("tipo") == "C" else "#dc2626"
+    oi = d["oi"]
+    oi_txt = f"{oi/1e6:.1f}M" if oi >= 1e6 else f"{oi/1e3:.0f}k"
+    return (f'<span style="color:{cor}">{tp}</span> {_fmt_strike(d.get("strike"))}'
+            f'<br><span class="sub">{oi_txt}</span>')
+
+
+def _dest_neg_cell(ticker) -> str:
+    """Opção mais negociada do ativo: tipo + strike (volume R$ e nº de negócios embaixo)."""
+    d = _DEST_NEG.get(_raiz_tk(ticker))
+    if not d or d.get("volume") is None:
+        return '<span class="sub">n/d</span>'
+    tp = "CALL" if d.get("tipo") == "C" else "PUT"
+    cor = "#16a34a" if d.get("tipo") == "C" else "#dc2626"
+    vol = d["volume"]
+    vol_txt = (f"R${vol/1e6:.1f}M" if vol >= 1e6 else f"R${vol/1e3:.0f}k")
+    neg = d.get("negocios") or 0
+    return (f'<span style="color:{cor}">{tp}</span> {_fmt_strike(d.get("strike"))}'
+            f'<br><span class="sub">{vol_txt} · {neg:.0f} neg</span>')
+
+
 def _aluguel_cell(ticker, row) -> str:
     """% das ações em circulação que estão em aluguel (posição em aberto) = pressão vendedora.
     Ações em circulação ~ market_cap / preço. Mostra só a quantidade se não der o %."""
@@ -342,6 +375,8 @@ def _mood_block(mood: dict, opcoes: dict = None) -> str:
 _SECTOR_MED = {}
 _PC_ATIVO = {}                      # raiz do ticker -> {pc_ratio, ...} (opções)
 _ALUGUEL = {}                       # ticker -> {qtd, valor} (posição de aluguel em aberto)
+_DEST_OI = {}                       # raiz -> {tipo, strike, oi} (maior open interest)
+_DEST_NEG = {}                      # raiz -> {tipo, strike, volume, negocios} (mais negociada)
 
 
 def _raiz_tk(ticker):
@@ -388,7 +423,8 @@ def _risco_table(df: pd.DataFrame) -> str:
             "<th class='r'>vs Min52</th>"
             "<th class='r'>vs MM100</th><th class='r'>Beta</th>"
             "<th class='r'>Corr.Ibov</th><th class='r'>P/C opç.</th>"
-            "<th class='r'>Aluguel</th></tr>")
+            "<th class='r'>Aluguel</th><th class='r'>Maior OI</th>"
+            "<th class='r'>Mais neg.</th></tr>")
     linhas = []
     for tk, r in df.iterrows():
         linhas.append(
@@ -398,7 +434,9 @@ def _risco_table(df: pd.DataFrame) -> str:
             f"{cell(r.get('dist_mm100'), pct=True, sign=True)}"
             f"{num_sign(r.get('beta'))}{num_sign(r.get('corr_ibov'))}"
             f"<td class='r'>{_pc_cell((_PC_ATIVO.get(_raiz_tk(tk)) or {}).get('pc_ratio'))}</td>"
-            f"<td class='r'>{_aluguel_cell(tk, r)}</td></tr>")
+            f"<td class='r'>{_aluguel_cell(tk, r)}</td>"
+            f"<td class='r'>{_dest_oi_cell(tk)}</td>"
+            f"<td class='r'>{_dest_neg_cell(tk)}</td></tr>")
     leg = ('<p class="sub" style="margin:4px 0 0">Preço, Mín 52s e Máx 52s em R$ (mínima e '
            'máxima de 52 semanas). vs Min52 = distância da mínima de 52 semanas; vs MM100 = '
            'posição vs média de 100 dias. <span style="color:#16a34a">Verde/+</span> acima, '
@@ -410,7 +448,10 @@ def _risco_table(df: pd.DataFrame) -> str:
            '<span style="color:#16a34a">≤0,8</span> altista. Aluguel = % das ações em '
            'circulação em posição de aluguel em aberto (BDI/B3), proxy de pressão vendedora: '
            '<span style="color:#dc2626">≥5%</span> alta, <span style="color:#b45309">2–5%</span> '
-           'moderada.</p>')
+           'moderada. Maior OI = opção com maior posição em aberto do ativo (tipo + strike, OI '
+           'embaixo; BDI/B3). Mais neg. = opção mais negociada em volume (tipo + strike, volume '
+           'R$ e nº de negócios; COTAHIST/B3). <span style="color:#16a34a">CALL</span> / '
+           '<span style="color:#dc2626">PUT</span>.</p>')
     return (f'<h3 style="{_H3}">Preço &amp; risco</h3>'
             f'<div class="ind"><table>{head}{"".join(linhas)}</table></div>{leg}')
 
@@ -552,6 +593,9 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
     _PC_ATIVO = (opcoes or {}).get("por_ativo") or {}
     global _ALUGUEL
     _ALUGUEL = ((opcoes or {}).get("aluguel") or {}).get("por_ativo") or {}
+    global _DEST_OI, _DEST_NEG
+    _DEST_OI = (opcoes or {}).get("destaque_oi") or {}
+    _DEST_NEG = (opcoes or {}).get("mais_negociada") or {}
     painel = ""
     if macro:
         try:
@@ -701,6 +745,9 @@ def build_email_body(hoje: str, meta: dict, market: dict, mood: dict, n_sel: int
     _PC_ATIVO = (opcoes or {}).get("por_ativo") or {}
     global _ALUGUEL
     _ALUGUEL = ((opcoes or {}).get("aluguel") or {}).get("por_ativo") or {}
+    global _DEST_OI, _DEST_NEG
+    _DEST_OI = (opcoes or {}).get("destaque_oi") or {}
+    _DEST_NEG = (opcoes or {}).get("mais_negociada") or {}
     painel = ""
     if macro:
         try:

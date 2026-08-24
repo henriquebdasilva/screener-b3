@@ -541,8 +541,17 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 aluguel_data = fetch_aluguel(ticker_setor=tk_setor)
                 if opcoes_data is not None and oi_data is not None:
                     opcoes_data["oi"] = oi_data      # anexa o open interest ao pacote de opções
+                    # resolve o strike do maior OI cruzando com o strike limpo do COTAHIST
+                    try:
+                        from posicoes import resolver_destaques_oi
+                        opcoes_data["destaque_oi"] = resolver_destaques_oi(
+                            oi_data.get("maior_oi"), opcoes_data.get("strike_map"),
+                            opcoes_data.get("spot"))
+                    except Exception as e:
+                        print(f"[oi] strike do destaque: {e}")
                 elif oi_data is not None:
-                    opcoes_data = {"oi": oi_data}
+                    opcoes_data = {"oi": oi_data,
+                                   "destaque_oi": (oi_data.get("maior_oi") or {})}
                 if aluguel_data is not None:
                     opcoes_data = opcoes_data or {}
                     opcoes_data["aluguel"] = aluguel_data

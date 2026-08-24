@@ -126,6 +126,35 @@ def parse_oi(texto: str, underlying_roots=None):
     return out
 
 
+def strike_do_codigo(code: str, spot: float = None):
+    """Estima o strike a partir do código da opção (fallback quando não há strike limpo).
+    Ex.: 'PETRK406' -> tenta 406/10=40,6 ou 406/100=4,06 e escolhe o mais próximo do spot.
+    Retorna float ou None. POUCO confiável: use o strike do COTAHIST quando possível."""
+    import re
+    m = re.match(r"^[A-Za-z]+?([A-Za-z])(\d+)$", str(code).upper())
+    if not m:
+        return None
+    dig = m.group(2)
+    cands = [int(dig) / 10.0, int(dig) / 100.0, float(int(dig))]
+    if spot and spot > 0:
+        return min(cands, key=lambda x: abs(x - spot))
+    return cands[0]                  # sem spot: assume /10 (mais comum p/ ações da B3)
+
+
+def resolver_destaques_oi(maior_oi: dict, strike_map: dict = None, spot: dict = None) -> dict:
+    """Enriquece o dict 'maior_oi' (raiz -> {code,tipo,oi}) com o strike: usa o strike LIMPO do
+    COTAHIST (strike_map por código) e cai para a estimativa do código quando não houver."""
+    strike_map = strike_map or {}
+    spot = spot or {}
+    out = {}
+    for raiz, d in (maior_oi or {}).items():
+        st = strike_map.get(d["code"])
+        if st is None:
+            st = strike_do_codigo(d["code"], spot.get(raiz))
+        out[raiz] = {**d, "strike": st}
+    return out
+
+
 def _ratio(call_oi: float, put_oi: float) -> dict:
     tot = call_oi + put_oi
     return {"call_oi": call_oi, "put_oi": put_oi,
@@ -135,11 +164,16 @@ def _ratio(call_oi: float, put_oi: float) -> dict:
 
 
 def oi_ratios(posicoes: list, ticker_setor: dict = None) -> dict:
-    """Razão de open interest Put/Call por ativo, setor e mercado."""
+    """Razão de open interest Put/Call por ativo, setor e mercado. Também guarda, por ativo, a
+    série de MAIOR open interest (code, tipo, oi) para destaque no relatório."""
     por_base = {}
+    maior_oi = {}                    # raiz -> série com maior OI
     for p in posicoes:
         d = por_base.setdefault(p["raiz"], [0.0, 0.0])
         d[0 if p["tipo"] == "C" else 1] += p["oi"]
+        cur = maior_oi.get(p["raiz"])
+        if cur is None or p["oi"] > cur["oi"]:
+            maior_oi[p["raiz"]] = {"code": p["ticker"], "tipo": p["tipo"], "oi": p["oi"]}
     por_ativo = {r: _ratio(c, pp) for r, (c, pp) in por_base.items()}
     tc = sum(v[0] for v in por_base.values())
     tp = sum(v[1] for v in por_base.values())
@@ -159,7 +193,8 @@ def oi_ratios(posicoes: list, ticker_setor: dict = None) -> dict:
             a[0] += c
             a[1] += pp
         por_setor = {s: _ratio(c, pp) for s, (c, pp) in acc.items()}
-    return {"mercado": mercado, "por_setor": por_setor, "por_ativo": por_ativo}
+    return {"mercado": mercado, "por_setor": por_setor, "por_ativo": por_ativo,
+            "maior_oi": maior_oi}
 
 
 def _parse_oi_json(texto: str, underlying_roots=None):

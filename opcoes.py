@@ -116,10 +116,19 @@ def put_call_ratios(opcoes: list, ticker_setor: dict = None,
         return _raiz(opt_ticker)                          # fallback (sem universo)
 
     por_base = {}
+    mais_neg = {}                    # base -> opção com MAIOR volume (destaque negociada)
+    strike_map = {}                  # código da opção -> strike limpo (do COTAHIST)
     for o in opcoes:
         b = base_de(o["ticker"])
         d = por_base.setdefault(b, [0.0, 0.0])
         d[0 if o["tipo"] == "C" else 1] += o["volume"]
+        if o.get("strike") is not None:
+            strike_map[o["ticker"]] = o["strike"]
+        cur = mais_neg.get(b)
+        if cur is None or o["volume"] > cur["volume"]:
+            mais_neg[b] = {"code": o["ticker"], "strike": o.get("strike"),
+                           "tipo": o["tipo"], "volume": o["volume"],
+                           "negocios": o.get("negocios", 0)}
     por_ativo = {r: _ratio(c, p) for r, (c, p) in por_base.items()}
     tc = sum(v[0] for v in por_base.values())
     tp = sum(v[1] for v in por_base.values())
@@ -140,7 +149,8 @@ def put_call_ratios(opcoes: list, ticker_setor: dict = None,
             a[0] += c
             a[1] += p
         por_setor = {s: _ratio(c, p) for s, (c, p) in acc.items()}
-    return {"mercado": mercado, "por_setor": por_setor, "por_ativo": por_ativo}
+    return {"mercado": mercado, "por_setor": por_setor, "por_ativo": por_ativo,
+            "mais_negociada": mais_neg, "strike_map": strike_map}
 
 
 def fetch_opcoes(ticker_setor: dict = None, data: str = None) -> dict | None:
