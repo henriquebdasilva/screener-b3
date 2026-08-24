@@ -262,6 +262,77 @@ def parse_oi_pdf(fonte) -> list:
     return out
 
 
+def parse_aluguel_pdf(fonte) -> dict:
+    """Extrai o ALUGUEL (empréstimo de ativos) do PDF 'Empréstimos de ativos' (BDI_04-2),
+    tabela 'Posições em aberto'. Por ativo, soma a linha 'Total': 'Saldo em quantidade do ativo'
+    (ações em aberto) e 'Saldo em R$'. Retorna {ticker: {'qtd': ações, 'valor': R$}}.
+    Ações em aberto no empréstimo = proxy de posição vendida (short) = pressão vendedora."""
+    import pymupdf
+    from collections import defaultdict
+    doc = pymupdf.open(stream=fonte, filetype="pdf") if isinstance(fonte, (bytes, bytearray)) \
+        else pymupdf.open(fonte)
+    out, na_secao = {}, False
+    for page in doc:
+        txt = page.get_text()
+        if "Posições em aberto" in txt or "Posições em Aberto" in txt:
+            na_secao = True
+        if not na_secao:
+            continue
+        words = page.get_text("words")
+        L = defaultdict(list)
+        for w in words:
+            L[round(w[1] / 2) * 2].append((w[0], w[4]))
+        for y in sorted(L):
+            cells = [t for _, t in sorted(L[y])]
+            if len(cells) >= 6 and cells[0].count("/") == 2 and "Total" in cells:
+                tk = cells[1]
+                qtd = _num_br(cells[-3])            # Saldo em quantidade do ativo
+                val = _num_br(cells[-1])            # Saldo em R$
+                if qtd is not None:
+                    d = out.setdefault(tk, {"qtd": 0.0, "valor": 0.0})
+                    d["qtd"] += qtd
+                    d["valor"] += (val or 0.0)
+    return out
+
+
+def fetch_aluguel(ticker_setor: dict = None) -> dict | None:
+    """Baixa o PDF 'Empréstimos de ativos' (BDI_04-2) e extrai a posição em aberto de aluguel
+    por ativo. Envs: ALUGUEL=0 desliga; ALUGUEL_URL força URL; ALUGUEL_CAPITULO troca capítulo.
+    Valida no runtime (B3 bloqueada no sandbox); parser testado em PDF real."""
+    if os.getenv("ALUGUEL", "1") == "0":
+        return None
+    import datetime as dt
+    cap = os.getenv("ALUGUEL_CAPITULO", "04-2")
+    forcado = os.getenv("ALUGUEL_URL")
+    tentativas = ([forcado] if forcado else
+                  [_bdi_pdf_url(dt.date.today() - dt.timedelta(days=i), cap) for i in range(6)])
+    for url in tentativas:
+        try:
+            req = Request(url, headers={"User-Agent": "Mozilla/5.0 (screener-b3)"})
+            with urlopen(req, timeout=120) as r:
+                raw = r.read()
+        except Exception as e:
+            print(f"[aluguel] {url.split('/')[-1]}: {e}")
+            continue
+        try:
+            dados = raw
+            if raw[:4] == b"PK\x03\x04":
+                import zipfile
+                zf = zipfile.ZipFile(io.BytesIO(raw))
+                dados = zf.read(zf.namelist()[0])
+            por_ativo = parse_aluguel_pdf(bytes(dados))
+        except Exception as e:
+            print(f"[aluguel] falha ao parsear {url.split('/')[-1]}: {e}")
+            continue
+        if not por_ativo:
+            print(f"[aluguel] {url.split('/')[-1]} sem posições reconhecidas.")
+            continue
+        print(f"[aluguel] {url.split('/')[-1]}: {len(por_ativo)} ativos com posição de aluguel.")
+        return {"por_ativo": por_ativo}
+    print("[aluguel] não consegui baixar o BDI de empréstimos (B3 fora do ar ou layout mudou).")
+    return None
+
+
 def _bdi_pdf_url(dataobj, capitulo="03-4"):
     d = dataobj
     return (f"https://arquivos.b3.com.br/bdi/download/bdi/{d.strftime('%Y-%m-%d')}/"
