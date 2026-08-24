@@ -162,41 +162,164 @@ def oi_ratios(posicoes: list, ticker_setor: dict = None) -> dict:
     return {"mercado": mercado, "por_setor": por_setor, "por_ativo": por_ativo}
 
 
-def fetch_open_interest(ticker_setor: dict = None) -> dict | None:
-    """Baixa o arquivo de posições em aberto (env OI_URL) e calcula os ratios. None em falha.
-    A URL é configurável porque o endpoint diário da B3 muda; valida no runtime."""
-    if os.getenv("OI", "1") == "0":
+def _parse_oi_json(texto: str, underlying_roots=None):
+    """Parser flexível para JSON do BDI novo (arquivos.b3.com.br/bdi/tabelas). Procura, em
+    qualquer lista de registros, os campos de código do instrumento e de posição em aberto."""
+    import json
+    try:
+        data = json.loads(texto)
+    except Exception:
+        return []
+
+    def achar_registros(obj):
+        # procura recursivamente a maior lista de dicts
+        melhor = []
+        if isinstance(obj, list) and obj and isinstance(obj[0], dict):
+            melhor = obj
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                cand = achar_registros(v)
+                if len(cand) > len(melhor):
+                    melhor = cand
+        return melhor
+
+    regs = achar_registros(data)
+    if not regs:
+        return []
+    keys = list(regs[0].keys())
+
+    def achar_key(termos):
+        for k in keys:
+            if any(t in str(k).upper() for t in termos):
+                return k
         return None
-    url = os.getenv("OI_URL")
-    if not url:
-        print("[oi] defina OI_URL com o arquivo 'Posições em Aberto em Derivativos (Listado)' "
-              "da B3 (Boletim Diário → Arquivos para download). Open interest fica n/d.")
+    kcod = achar_key(("TCKR", "SYMB", "INSTRUMENT", "CODIGO", "CÓDIGO", "SERIE", "SÉRIE"))
+    koi = achar_key(("POSABRT", "ABRT", "ABERT", "POSI", "CONTRAT", "OPEN", "OINTR"))
+    if not kcod or not koi:
+        return []
+    roots_ord = sorted({str(r).upper() for r in (underlying_roots or [])},
+                       key=len, reverse=True)
+    out = []
+    for r in regs:
+        code = str(r.get(kcod, "")).strip().upper()
+        cl = classificar_opcao(code, roots_ord) if roots_ord else (
+            (raiz_do_codigo(code), tipo_opcao(code)) if tipo_opcao(code) else None)
+        if not cl:
+            continue
+        raiz, tp = cl
+        try:
+            oi = float(str(r.get(koi)).replace(".", "").replace(",", ".").strip())
+        except Exception:
+            continue
+        out.append({"ticker": code, "raiz": raiz, "tipo": tp, "oi": oi})
+    return out
+
+
+def _num_br(s):
+    """'9.800' -> 9800.0 ; '-'/vazio -> None (formato numérico brasileiro)."""
+    s = str(s).strip().strip('"')
+    if not s or s == "-":
         return None
     try:
-        req = Request(url, headers={"User-Agent": "Mozilla/5.0 (screener-b3)"})
-        with urlopen(req, timeout=90) as r:
-            raw = r.read()
-        # pode vir zipado
-        if raw[:4] == b"PK\x03\x04":
-            import zipfile
-            zf = zipfile.ZipFile(io.BytesIO(raw))
-            texto = zf.read(zf.namelist()[0]).decode("latin-1")
-        else:
-            texto = raw.decode("latin-1")
-        roots = None
-        if ticker_setor:
-            roots = {_raiz(tk) for tk in ticker_setor}
-        posicoes = parse_oi(texto, underlying_roots=roots)
+        return float(s.replace(".", "").replace(",", "."))
+    except Exception:
+        return None
+
+
+def parse_oi_pdf(fonte) -> list:
+    """Extrai o open interest de OPÇÕES SOBRE AÇÕES do PDF 'Derivativos de bolsa' (BDI_03-4).
+    A tabela 'Quadro Analítico das Posições em Aberto' traz, por série: Ativo (ativo-base),
+    Segmento ('EQUITY CALL'/'EQUITY PUT') e 'Total de posições' (índice 11) = open interest.
+    Reconstrói as linhas pelas coordenadas das palavras. Requer PyMuPDF (pymupdf)."""
+    import pymupdf
+    from collections import defaultdict
+    doc = pymupdf.open(stream=fonte, filetype="pdf") if isinstance(fonte, (bytes, bytearray)) \
+        else pymupdf.open(fonte)
+    out = []
+    for page in doc:
+        words = page.get_text("words")
+        if not words:
+            continue
+        L = defaultdict(list)
+        for w in words:
+            L[round(w[1] / 3) * 3].append((w[0], w[4]))
+        for y in sorted(L):
+            cells = [t for _, t in sorted(L[y])]
+            # junta o segmento em duas palavras ('EQUITY' + 'CALL'/'PUT')
+            r, i = [], 0
+            while i < len(cells):
+                if cells[i] == "EQUITY" and i + 1 < len(cells) and cells[i + 1] in ("CALL", "PUT"):
+                    r.append("EQUITY " + cells[i + 1])
+                    i += 2
+                else:
+                    r.append(cells[i])
+                    i += 1
+            if len(r) >= 12 and r[4] in ("EQUITY CALL", "EQUITY PUT") and r[2]:
+                oi = _num_br(r[11])                 # 'Total de posições'
+                if oi is not None:
+                    out.append({"ticker": r[0], "raiz": r[2].upper(),
+                                "tipo": "C" if r[4] == "EQUITY CALL" else "P", "oi": oi})
+    return out
+
+
+def _bdi_pdf_url(dataobj, capitulo="03-4"):
+    d = dataobj
+    return (f"https://arquivos.b3.com.br/bdi/download/bdi/{d.strftime('%Y-%m-%d')}/"
+            f"BDI_{capitulo}_{d.strftime('%Y%m%d')}.pdf")
+
+
+def fetch_open_interest(ticker_setor: dict = None) -> dict | None:
+    """Baixa o PDF 'Derivativos de bolsa' (BDI_03-4) da B3 e calcula o open interest Put/Call
+    das opções sobre ações. Tenta a data de hoje e volta pregões. URL/capítulo configuráveis
+    por env (OI_URL força uma URL; OI_CAPITULO troca o capítulo). Desligue com OI=0. None em falha.
+    A busca valida no runtime (a B3 é bloqueada no meu sandbox); o parser é testado em PDF real."""
+    if os.getenv("OI", "1") == "0":
+        return None
+    import datetime as dt
+    cap = os.getenv("OI_CAPITULO", "03-4")
+    forcado = os.getenv("OI_URL")
+    tentativas = ([(forcado, None)] if forcado else
+                  [(_bdi_pdf_url(dt.date.today() - dt.timedelta(days=i), cap),
+                    dt.date.today() - dt.timedelta(days=i)) for i in range(6)])
+    for url, d in tentativas:
+        try:
+            req = Request(url, headers={"User-Agent": "Mozilla/5.0 (screener-b3)"})
+            with urlopen(req, timeout=120) as r:
+                raw = r.read()
+        except Exception as e:
+            print(f"[oi] {url.split('/')[-1]}: {e}")
+            continue
+        try:
+            if raw[:4] == b"%PDF":
+                posicoes = parse_oi_pdf(bytes(raw))
+            elif raw[:4] == b"PK\x03\x04":
+                import zipfile
+                zf = zipfile.ZipFile(io.BytesIO(raw))
+                nome = zf.namelist()[0]
+                dados = zf.read(nome)
+                posicoes = (parse_oi_pdf(bytes(dados)) if nome.lower().endswith(".pdf")
+                            else parse_oi(dados.decode("latin-1"),
+                                          underlying_roots=({_raiz(t) for t in ticker_setor}
+                                                            if ticker_setor else None)))
+            elif raw[:1].decode("latin-1", "ignore") in "[{":
+                posicoes = _parse_oi_json(raw.decode("utf-8", "replace"),
+                                          {_raiz(t) for t in ticker_setor} if ticker_setor else None)
+            else:
+                posicoes = parse_oi(raw.decode("latin-1"),
+                                    underlying_roots=({_raiz(t) for t in ticker_setor}
+                                                      if ticker_setor else None))
+        except Exception as e:
+            print(f"[oi] falha ao parsear {url.split('/')[-1]}: {e}")
+            continue
         if not posicoes:
-            print("[oi] arquivo baixado mas não reconheci as colunas — rode com o cabeçalho "
-                  "real que eu ajusto o parser.")
-            return None
+            print(f"[oi] {url.split('/')[-1]} sem séries reconhecidas.")
+            continue
         r = oi_ratios(posicoes, ticker_setor)
         r["n_series"] = len(posicoes)
+        r["data"] = d
         pc = r["mercado"]["oi_ratio"]
-        print(f"[oi] {len(posicoes)} séries; OI Put/Call mercado="
-              + (f"{pc:.2f}" if not math.isnan(pc) else "n/d"))
+        print(f"[oi] {url.split('/')[-1]}: {len(posicoes)} séries de opções; "
+              f"OI Put/Call mercado=" + (f"{pc:.2f}" if not math.isnan(pc) else "n/d"))
         return r
-    except Exception as e:
-        print(f"[oi] falha ao baixar/parsear: {e}")
-        return None
+    print("[oi] não consegui baixar o BDI de derivativos (B3 fora do ar ou layout mudou).")
+    return None

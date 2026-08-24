@@ -9,3 +9,4 @@ requests>=2.31
 tabulate>=0.9
 xhtml2pdf
 yfinance>=0.2.40
+pymupdf
