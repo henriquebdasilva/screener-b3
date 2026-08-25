@@ -32,12 +32,14 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
         send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
-        breakout_max_ext=0.08, pivot_max_ext=0.06, pattern_max_ext=0.10,
+        breakout_max_ext=0.08, pivot_max_ext=0.06, pivot_lower_frac=0.5,
+        pattern_max_ext=0.10,
         flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
         max_net_debt_equity=1.5, split_by_origin=True, group_top=None,
+        q_bluechip=0.60, q_smallcap=0.50, q_defensive=0.70,
         use_basileia=True, cyclical_penalty=0.25, defensive_max_cyc=0.4,
         teto_max_upside=200.0, teto_disp_max=8.0,
         suspect_pl_min=2.0, suspect_dy_max=20.0, teto_proj_yield=6.0,
@@ -95,6 +97,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 min_breakout_margin_pct=breakout_margin_pct,
                 breakout_max_ext=breakout_max_ext,
                 pivot_max_ext=pivot_max_ext,
+                pivot_lower_frac=pivot_lower_frac,
                 pattern_max_ext=pattern_max_ext,
                 flag_min_dias=flag_min_dias,
                 flag_pole_min=flag_pole_min,
@@ -408,17 +411,31 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     hard = hard.fillna(False)
 
-    # 2) percentil por grupo, calculado SÓ entre os sobreviventes dos cortes duros
-    frac = group_top if (group_top is not None) else top_quantile
+    # 2) percentil por SEGMENTO, calculado só entre os sobreviventes dos cortes duros.
+    #    Frações ajustáveis: blue chips (BOVA11), small caps (SMALL11) e um pool DEFENSIVO
+    #    (baixa ciclicidade) mais permissivo. group_top, se dado, sobrepõe tudo (retrocompat.).
     surv = df[hard]
     if min_invest is not None:
         fund_ok = hard & (df["investment"] >= float(min_invest))
     elif split_by_origin:
-        thr = surv.groupby("grupo")["investment"].transform(
-            lambda s: s.quantile(1 - frac))
+        q_map = {"BOVA11": q_bluechip, "SMALL11": q_smallcap}
+        if group_top is not None:                     # força a mesma fração em tudo
+            q_map = {}
+        # limiar por grupo, cada grupo com sua fração
         thr_full = pd.Series(index=df.index, dtype=float)
-        thr_full.loc[surv.index] = thr
-        fund_ok = hard & df["investment"].ge(thr_full)
+        for g, sub in surv.groupby("grupo"):
+            fr = group_top if group_top is not None else q_map.get(g, top_quantile)
+            thr_full.loc[sub.index] = sub["investment"].quantile(1 - fr)
+        passa_grupo = df["investment"].ge(thr_full).fillna(False)
+        # pool DEFENSIVO: fração própria (mais permissiva), mesma def. da seção Defensivas
+        passa_def = pd.Series(False, index=df.index)
+        if group_top is None and "ciclicidade" in df.columns:
+            is_def = df["ciclicidade"] <= defensive_max_cyc
+            def_surv = surv[surv["ciclicidade"] <= defensive_max_cyc]
+            if len(def_surv):
+                thr_def = def_surv["investment"].quantile(1 - q_defensive)
+                passa_def = (is_def & df["investment"].ge(thr_def)).fillna(False)
+        fund_ok = hard & (passa_grupo | passa_def)
     else:
         thr = surv["investment"].quantile(1 - top_quantile) if len(surv) else float("inf")
         fund_ok = hard & (df["investment"] >= thr)
@@ -682,7 +699,15 @@ def parse_args():
     p.add_argument("--universe", choices=["ibov", "smll", "both"], default="both")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--top-quantile", type=float, default=0.5,
-                   help="fração superior por Investment Score que passa no fundamentalista")
+                   help="fração superior por Investment Score que passa no fundamentalista "
+                        "(fallback p/ grupos sem fração própria)")
+    p.add_argument("--q-bluechip", type=float, default=0.60,
+                   help="fração superior das blue chips / BOVA11 (default 0.60)")
+    p.add_argument("--q-smallcap", type=float, default=0.50,
+                   help="fração superior das small caps / SMALL11 (default 0.50)")
+    p.add_argument("--q-defensive", type=float, default=0.70,
+                   help="fração superior do pool DEFENSIVO (baixa ciclicidade), mais permissiva "
+                        "(default 0.70)")
     g.add_argument("--min-invest", type=float, default=None,
                    help="nota mínima de Investment (0-100) em vez de quantil")
     p.add_argument("--lookback", type=int, default=20)
@@ -697,6 +722,9 @@ def parse_args():
                         "evita perseguir rompimento esticado)")
     p.add_argument("--pivot-max-ext", type=float, default=0.06,
                    help="extensão máx. do pivô acima do topo da consolidação (default 0.06)")
+    p.add_argument("--pivot-lower-frac", type=float, default=0.5,
+                   help="pivô só na parte inferior da consolidação: fração da faixa a "
+                        "partir do fundo (default 0.5 = metade inferior; 0.33 = terço inferior)")
     p.add_argument("--pattern-max-ext", type=float, default=0.10,
                    help="extensão máx. dos padrões (fundo duplo/triplo, bandeira) acima do "
                         "pescoço/linha (default 0.10 = 10%%)")
@@ -799,6 +827,7 @@ if __name__ == "__main__":
         breakout_margin_pct=a.breakout_margin_pct,
         breakout_max_ext=a.breakout_max_ext,
         pivot_max_ext=a.pivot_max_ext,
+        pivot_lower_frac=a.pivot_lower_frac,
         pattern_max_ext=a.pattern_max_ext,
         flag_min_dias=a.flag_min_dias,
         flag_pole_min=a.flag_pole_min,
@@ -811,6 +840,7 @@ if __name__ == "__main__":
         consistency_weight=a.consistency_weight,
         max_net_debt_equity=a.max_net_debt_equity,
         split_by_origin=not a.no_split, group_top=a.group_top,
+        q_bluechip=a.q_bluechip, q_smallcap=a.q_smallcap, q_defensive=a.q_defensive,
         use_basileia=not a.no_basileia, cyclical_penalty=a.cyclical_penalty,
         defensive_max_cyc=a.defensive_max_cyc,
         teto_max_upside=a.teto_max_upside, teto_disp_max=a.teto_disp_max,

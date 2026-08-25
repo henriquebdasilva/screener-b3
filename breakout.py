@@ -352,6 +352,7 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     pivot_consol_pct: float = 20.0,
                     breakout_max_ext: float = 0.08,
                     pivot_max_ext: float = 0.06,
+                    pivot_lower_frac: float = 0.5,
                     pattern_max_ext: float = 0.10,
                     flag_min_dias: int = 7,
                     flag_pole_min: float = 0.12,
@@ -405,19 +406,28 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
               res.pct_to_level <= breakout_max_ext * 100.0)
     breakout = bool(broke_raw and vol_ok and trend_ok and ext_ok)
 
-    # ---- PIVÔ (mantém a lógica original; já exige tendência não-baixa) ----
-    pivot_raw = (res.trend != EM_BAIXA_STR) and is_pivoting(
+    # ---- PIVÔ: recuo ao suporte que vira p/ cima DENTRO de tendência de alta ----
+    #   • tendência de ALTA ESTRUTURAL (preço > MM200 e MM50 > MM200) — a consolidação achata a
+    #     MM21, então a alta de fundo é medida pelas médias longas, não pelos últimos 7 dias;
+    #   • o fechamento deve estar na PARTE INFERIOR da consolidação (≤ pivot_lower_frac da faixa),
+    #     ou seja, virando perto do suporte — não no meio/topo do range;
+    #   • não pode estar esticado acima do topo da consolidação (pivot_max_ext).
+    pivot_raw = (res.above_sma200 and res.sma50_gt_sma200) and is_pivoting(
         df, pivot_consol_pct, MIN_DAYS_BEFORE_WINDOW_PIVOT,
         MAX_DAYS_BEFORE_WINDOW_PIVOT)
-    # extensão do pivô: o fechamento não pode estar muito acima do topo da consolidação
-    pivot_ext_ok = True
+    pivot_ext_ok, pivot_low_ok = True, True
     try:
         janela = close.iloc[-(MAX_DAYS_BEFORE_WINDOW_PIVOT + 1):-1]
-        if len(janela) and res.close > janela.max() * (1 + pivot_max_ext):
-            pivot_ext_ok = False
+        if len(janela):
+            lo, hi = float(janela.min()), float(janela.max())
+            if res.close > hi * (1 + pivot_max_ext):          # esticado acima do topo
+                pivot_ext_ok = False
+            faixa = hi - lo
+            if faixa > 0 and res.close > lo + pivot_lower_frac * faixa:
+                pivot_low_ok = False                          # está acima da parte inferior
     except Exception:
         pass
-    pivot = bool(pivot_raw and pivot_ext_ok)
+    pivot = bool(pivot_raw and pivot_ext_ok and pivot_low_ok)
 
     if breakout:
         res.signal, res.strategy, res.days_since_breakout = True, BREAKOUT_STR, 0
