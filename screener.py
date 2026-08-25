@@ -615,8 +615,14 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 if len(selecionados) else 0
             meta_dict = dict(universe=universe, top_quantile=top_quantile,
                              min_invest=min_invest)
-            gpct = (int(round(frac * 100)) if split_by_origin
-                    and min_invest is None else None)
+            gpct = None
+            if split_by_origin and min_invest is None:
+                if group_top is not None:
+                    _p = int(round(group_top * 100))
+                    gpct = {"BOVA11": _p, "SMALL11": _p}
+                else:
+                    gpct = {"BOVA11": int(round(q_bluechip * 100)),
+                            "SMALL11": int(round(q_smallcap * 100))}
             wl_df = full[full["in_wishlist"]].sort_values("investment", ascending=False)
             ca_df = full[full["in_carteira"]].sort_values("investment", ascending=False)
 
@@ -654,7 +660,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                   f"{outdir}/selecionados_{hoje}.csv", macro_path) if p]
             send_report_email(subject, html, anexos)
         except Exception as e:
+            import traceback as _tb
             print(f"[email] falhou: {e}")
+            print("[email] traceback completo:\n" + _tb.format_exc())
 
     print(f"\nOK. {len(full)} avaliadas | {int(full['fund_ok'].sum())} nos critérios "
           f"fundamentalistas | {int(full['breakout'].sum())} com oportunidade gráfica "

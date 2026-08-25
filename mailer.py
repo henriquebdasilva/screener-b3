@@ -604,7 +604,9 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
         except Exception:
             painel = ""
     topo = painel + _market_block(market) + _mood_block(mood, opcoes)
-    suf = f" ({group_pct}% de maior score)" if group_pct else ""
+    def _suf(g):
+        p = group_pct.get(g) if isinstance(group_pct, dict) else group_pct
+        return f" ({p}% de maior score)" if p else ""
 
     # monta o corpo com verbosidade controlável (para caber no limite de ~102 KB do Gmail)
     def assemble(show_ind, show_risco, show_agenda, tese_max=0, show_teto=True):
@@ -658,9 +660,9 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                          f'detalhe completo está na <b>planilha anexa</b>.</p>')
         body = (
             topo + nota_trim
-            + _group_block(bova, f"BOVA11 · Ibovespa{suf}", show_ind, show_risco,
+            + _group_block(bova, f"BOVA11 · Ibovespa{_suf('BOVA11')}", show_ind, show_risco,
                            show_agenda, show_teto)
-            + _group_block(small, f"SMALL11 · Small Caps{suf}", show_ind, show_risco,
+            + _group_block(small, f"SMALL11 · Small Caps{_suf('SMALL11')}", show_ind, show_risco,
                            show_agenda, show_teto)
             + _defensivas_section(defensivas, defensive_cyc)
             + f'<p class="sub" style="margin:14px 0 0">{_TETO_NOTE}</p>'
