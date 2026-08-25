@@ -32,6 +32,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
         send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
+        breakout_max_ext=0.08, pivot_max_ext=0.06, pattern_max_ext=0.10,
+        flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
@@ -91,6 +93,12 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 require_trend=require_trend, require_volume=require_volume,
                 breakout_consol_pct=breakout_consol_pct,
                 min_breakout_margin_pct=breakout_margin_pct,
+                breakout_max_ext=breakout_max_ext,
+                pivot_max_ext=pivot_max_ext,
+                pattern_max_ext=pattern_max_ext,
+                flag_min_dias=flag_min_dias,
+                flag_pole_min=flag_pole_min,
+                flag_min_retrace=flag_min_retrace,
             )
             if use_avg_dy:
                 avg_dy[tk] = avg_annual_dy(px, dy_years)
@@ -684,6 +692,20 @@ def parse_args():
                    help="amplitude máx. da consolidação p/ rompimento (%%, default 10)")
     p.add_argument("--breakout-margin-pct", type=float, default=1.5,
                    help="margem mínima acima do topo p/ validar rompimento (%%, default 1.5)")
+    p.add_argument("--breakout-max-ext", type=float, default=0.08,
+                   help="extensão MÁX. do rompimento acima do topo (fração, default 0.08 = 8%%; "
+                        "evita perseguir rompimento esticado)")
+    p.add_argument("--pivot-max-ext", type=float, default=0.06,
+                   help="extensão máx. do pivô acima do topo da consolidação (default 0.06)")
+    p.add_argument("--pattern-max-ext", type=float, default=0.10,
+                   help="extensão máx. dos padrões (fundo duplo/triplo, bandeira) acima do "
+                        "pescoço/linha (default 0.10 = 10%%)")
+    p.add_argument("--flag-min-dias", type=int, default=7,
+                   help="mínimo de pregões da consolidação da bandeira (default 7)")
+    p.add_argument("--flag-pole-min", type=float, default=0.12,
+                   help="alta mínima do mastro da bandeira (fração, default 0.12 = 12%%)")
+    p.add_argument("--flag-min-retrace", type=float, default=0.05,
+                   help="recuo MÍNIMO da bandeira, fração do mastro (default 0.05 = 5%%)")
     p.add_argument("--dy-years", type=int, default=5,
                    help="janela (anos) do DY médio usado no preço-teto (default 5)")
     p.add_argument("--no-avg-dy", action="store_true",
@@ -775,6 +797,12 @@ if __name__ == "__main__":
         enrich=not a.no_enrich, force_ia=a.force_ia,
         breakout_consol_pct=a.breakout_consol_pct,
         breakout_margin_pct=a.breakout_margin_pct,
+        breakout_max_ext=a.breakout_max_ext,
+        pivot_max_ext=a.pivot_max_ext,
+        pattern_max_ext=a.pattern_max_ext,
+        flag_min_dias=a.flag_min_dias,
+        flag_pole_min=a.flag_pole_min,
+        flag_min_retrace=a.flag_min_retrace,
         dy_years=a.dy_years, use_avg_dy=not a.no_avg_dy,
         bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto,
         teto_outlier_mult=a.teto_outlier_mult,

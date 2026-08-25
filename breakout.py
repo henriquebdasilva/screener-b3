@@ -191,13 +191,16 @@ def _local_minima(series: pd.Series, order: int = 5) -> list:
 
 def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
                          min_sep: int = 10, neckline_min: float = 0.08,
-                         drop_min: float = 0.20, order: int = 5):
+                         drop_min: float = 0.20, order: int = 5,
+                         max_bars_since: int = 20, max_ext: float = 0.10):
     """Fundo duplo (W) — padrão de REVERSÃO. Exige:
       • tendência de BAIXA antes do padrão (is_uptrend do trecho anterior aos fundos) e
         queda ≥ drop_min de um topo prévio até os fundos;
       • dois fundos alinhados (≤ tol entre eles) e separados por ≥ min_sep pregões;
       • pico intermediário (pescoço) ≥ neckline_min acima dos fundos;
-      • CONFIRMA quando o preço rompe o pescoço."""
+      • CONFIRMA quando o preço rompe o pescoço — mas SÓ se o rompimento for RECENTE
+        (≤ max_bars_since pregões) e o preço não estiver ESTICADO (≤ max_ext acima do pescoço),
+        para não sinalizar um fundo duplo antigo cujo movimento já aconteceu."""
     close = df["Close"].iloc[-lookback:]
     if len(close) < 40:
         return None
@@ -220,6 +223,14 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
                 continue
             if not (cur > peak and float(close.iloc[i2:].min()) >= base * (1 - tol)):
                 continue                                   # confirma rompimento do pescoço
+            # rompimento RECENTE e não ESTICADO (senão o sinal é velho)
+            after = close.iloc[i2:]
+            broke_idx = next((i2 + j for j in range(len(after))
+                              if float(after.iloc[j]) > peak), None)
+            if broke_idx is None or (len(close) - 1 - broke_idx) > max_bars_since:
+                continue                                   # rompeu há muito tempo
+            if cur / peak - 1 > max_ext:                   # já subiu demais acima do pescoço
+                continue
             if not _reversal_context(df, offset + i1, base, lookback, drop_min):
                 continue                                   # exige baixa + queda ≥20% antes
             return {"neckline": peak, "base": base}
@@ -228,9 +239,11 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
 
 def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.02,
                          min_sep: int = 8, neckline_min: float = 0.08,
-                         drop_min: float = 0.20, order: int = 5):
+                         drop_min: float = 0.20, order: int = 5,
+                         max_bars_since: int = 20, max_ext: float = 0.10):
     """Fundo triplo — reversão. Três fundos alinhados (≤tol) com picos entre eles, após
-    tendência de baixa + queda ≥drop_min; CONFIRMA no rompimento da resistência."""
+    tendência de baixa + queda ≥drop_min; CONFIRMA no rompimento da resistência — só se o
+    rompimento for RECENTE (≤max_bars_since) e o preço não estiver ESTICADO (≤max_ext)."""
     close = df["Close"].iloc[-lookback:]
     if len(close) < 60:
         return None
@@ -251,6 +264,13 @@ def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.02,
         return None
     if cur <= resist:
         return None
+    after = close.iloc[i3:]                                # rompimento recente e não esticado
+    broke_idx = next((i3 + j for j in range(len(after))
+                      if float(after.iloc[j]) > resist), None)
+    if broke_idx is None or (len(close) - 1 - broke_idx) > max_bars_since:
+        return None
+    if cur / resist - 1 > max_ext:
+        return None
     if not _reversal_context(df, offset + i1, base, lookback, drop_min):
         return None
     return {"neckline": resist, "base": base}
@@ -270,47 +290,56 @@ def _reversal_context(df, abs_i1: int, base: float, lookback: int,
     return prior_peak >= base * (1 + drop_min)            # queda ≥ drop_min do topo aos fundos
 
 
-def detect_bull_flag(df, pole_win: int = 20, pole_min: float = 0.18,
-                     flag_win: int = 15, flag_max_retrace: float = 0.45,
-                     break_win: int = 3):
+def detect_bull_flag(df, pole_win: int = 20, pole_min: float = 0.12,
+                     flag_win: int = 15, flag_min: int = 7,
+                     flag_max_retrace: float = 0.45, flag_min_retrace: float = 0.05,
+                     break_win: int = 3, max_ext: float = 0.10):
     """Bandeira de alta: forte alta ('mastro', ≥pole_min em pole_win pregões) seguida de
-    consolidação curta ('bandeira', recuo ≤flag_max_retrace). A bandeira deve ter inclinação
-    leve para baixo ou lateral. CONFIRMA quando o preço rompe a LINHA DE TENDÊNCIA SUPERIOR
-    (descendente) da bandeira — não o topo absoluto —, tolerando estar abaixo do pico inicial.
+    consolidação curta ('bandeira', recuo ≤flag_max_retrace). A janela da bandeira é FLEXÍVEL:
+    testa de `flag_min` (default 7) a `flag_win` (default 15) pregões e aceita a mais curta que
+    for válida (consolidação mais recente/apertada). A bandeira deve ter inclinação leve para
+    baixo ou lateral. CONFIRMA quando o preço rompe a LINHA DE TENDÊNCIA SUPERIOR (descendente).
+    FRESCOR: o fechamento antes da janela de rompimento ainda estava na/abaixo da linha.
+    EXTENSÃO: não sinaliza se já esticou >max_ext acima da linha superior ou do topo do mastro.
     """
     close = df["Close"]
-    if len(close) < pole_win + flag_win + 5:
-        return None
-    seg = close.iloc[-(pole_win + flag_win):]
-    pole, flag = seg.iloc[:pole_win], seg.iloc[pole_win:]
-    pole_low, pole_high = float(pole.min()), float(pole.max())
-    if pole_low <= 0 or (pole_high / pole_low - 1) < pole_min:
-        return None
-    flag_low = float(flag.min())
-    retrace = (pole_high - flag_low) / (pole_high - pole_low)
-    if retrace > flag_max_retrace:               # recuou demais -> não é bandeira
-        return None
-    if len(flag) < break_win + 4:
-        return None
-    body = flag.iloc[:-break_win]                # consolidação (sem os pregões de rompimento)
-    y = body.values.astype(float)
-    x = np.arange(len(y), dtype=float)
-    slope, intercept = np.polyfit(x, y, 1)
-    ampl = float(body.max() - body.min()) or 1.0
-    if slope > 0.05 * ampl:                      # subindo -> não é bandeira
-        return None
-    resid = y - (slope * x + intercept)
-    buf = float(np.nanmax(resid)) if len(resid) else 0.0
-    # resistência = linha superior da bandeira no FIM da consolidação (não extrapolada longe)
-    upper_ref = slope * (len(y) - 1) + intercept + buf
-    cur = float(close.iloc[-1])
-    prev = float(close.iloc[-(break_win + 1)])   # fechamento imediatamente antes do rompimento
-    brk = close.iloc[-break_win:]
-    rompeu = (cur >= upper_ref and cur > prev and cur >= float(brk.max()))  # rompe subindo
-    if rompeu and cur >= pole_high * 0.90:
-        return {"pole_pct": (pole_high / pole_low - 1) * 100.0,
-                "flag_retrace": retrace * 100.0,
-                "resistencia": round(upper_ref, 2), "incl": round(slope, 4)}
+    flag_min = max(break_win + 4, int(flag_min))          # piso técnico (polyfit + rompimento)
+    for flag_len in range(flag_min, int(flag_win) + 1):   # bandeira mais curta primeiro
+        need = pole_win + flag_len
+        if len(close) < need + 5:
+            continue
+        seg = close.iloc[-need:]
+        pole, flag = seg.iloc[:pole_win], seg.iloc[pole_win:]
+        pole_low, pole_high = float(pole.min()), float(pole.max())
+        if pole_low <= 0 or (pole_high / pole_low - 1) < pole_min:
+            continue
+        flag_low = float(flag.min())
+        retrace = (pole_high - flag_low) / (pole_high - pole_low)
+        if retrace > flag_max_retrace:               # recuou demais -> não é bandeira
+            continue
+        if retrace < flag_min_retrace:               # recuo raso demais -> continuação, não bandeira
+            continue
+        body = flag.iloc[:-break_win]                # consolidação (sem os pregões de rompimento)
+        y = body.values.astype(float)
+        x = np.arange(len(y), dtype=float)
+        slope, intercept = np.polyfit(x, y, 1)
+        ampl = float(body.max() - body.min()) or 1.0
+        if slope > 0.05 * ampl:                      # subindo -> não é bandeira
+            continue
+        resid = y - (slope * x + intercept)
+        buf = float(np.nanmax(resid)) if len(resid) else 0.0
+        upper_ref = slope * (len(y) - 1) + intercept + buf
+        cur = float(close.iloc[-1])
+        prev = float(close.iloc[-(break_win + 1)])   # fechamento antes do rompimento
+        brk = close.iloc[-break_win:]
+        rompeu = (cur >= upper_ref and cur > prev and cur >= float(brk.max()))
+        fresco = prev <= upper_ref * (1 + 0.01)      # antes do rompimento ainda estava na linha
+        nao_esticado = (cur <= upper_ref * (1 + max_ext) and
+                        cur <= pole_high * (1 + max_ext))
+        if rompeu and fresco and nao_esticado and cur >= pole_high * 0.90:
+            return {"pole_pct": (pole_high / pole_low - 1) * 100.0,
+                    "flag_retrace": retrace * 100.0, "flag_dias": flag_len,
+                    "resistencia": round(upper_ref, 2), "incl": round(slope, 4)}
     return None
 
 
@@ -321,6 +350,12 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     require_volume: bool = True, vol_mult: float = 1.5,
                     require_trend: bool = True,
                     pivot_consol_pct: float = 20.0,
+                    breakout_max_ext: float = 0.08,
+                    pivot_max_ext: float = 0.06,
+                    pattern_max_ext: float = 0.10,
+                    flag_min_dias: int = 7,
+                    flag_pole_min: float = 0.12,
+                    flag_min_retrace: float = 0.05,
                     detect_patterns: bool = True,
                     **_ignored) -> BreakoutResult:
     """Rompimento/pivô com filtros de assertividade sobre o algoritmo original.
@@ -365,12 +400,24 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
         MAX_DAYS_BEFORE_WINDOW_BREAKOUT, margin_pct=min_breakout_margin_pct)
     vol_ok = (not require_volume) or (pd.notna(res.vol_ratio) and res.vol_ratio >= vol_mult)
     trend_ok = (not require_trend) or (res.above_sma200 and res.sma50_gt_sma200)
-    breakout = bool(broke_raw and vol_ok and trend_ok)
+    # extensão: não sinalizar rompimento já esticado acima do topo rompido
+    ext_ok = (pd.isna(res.pct_to_level) or
+              res.pct_to_level <= breakout_max_ext * 100.0)
+    breakout = bool(broke_raw and vol_ok and trend_ok and ext_ok)
 
     # ---- PIVÔ (mantém a lógica original; já exige tendência não-baixa) ----
-    pivot = (res.trend != EM_BAIXA_STR) and is_pivoting(
+    pivot_raw = (res.trend != EM_BAIXA_STR) and is_pivoting(
         df, pivot_consol_pct, MIN_DAYS_BEFORE_WINDOW_PIVOT,
         MAX_DAYS_BEFORE_WINDOW_PIVOT)
+    # extensão do pivô: o fechamento não pode estar muito acima do topo da consolidação
+    pivot_ext_ok = True
+    try:
+        janela = close.iloc[-(MAX_DAYS_BEFORE_WINDOW_PIVOT + 1):-1]
+        if len(janela) and res.close > janela.max() * (1 + pivot_max_ext):
+            pivot_ext_ok = False
+    except Exception:
+        pass
+    pivot = bool(pivot_raw and pivot_ext_ok)
 
     if breakout:
         res.signal, res.strategy, res.days_since_breakout = True, BREAKOUT_STR, 0
@@ -381,9 +428,10 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
         res.note = "Pivô de alta"
     elif detect_patterns and res.trend != EM_BAIXA_STR:
         # padrões adicionais (candidatos), só fora de tendência de baixa
-        db = detect_double_bottom(df)
-        tb = detect_triple_bottom(df)
-        bf = detect_bull_flag(df)
+        db = detect_double_bottom(df, max_ext=pattern_max_ext)
+        tb = detect_triple_bottom(df, max_ext=pattern_max_ext)
+        bf = detect_bull_flag(df, max_ext=pattern_max_ext, flag_min=flag_min_dias,
+                              pole_min=flag_pole_min, flag_min_retrace=flag_min_retrace)
         if tb:
             res.signal, res.strategy = True, TRIPLE_BOTTOM_STR
             res.note = f"Fundo triplo — rompeu pescoço ~R${tb['neckline']:.2f} (candidato)"
@@ -393,7 +441,8 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
         elif bf:
             res.signal, res.strategy = True, BULL_FLAG_STR
             res.note = (f"Bandeira de alta — mastro +{bf['pole_pct']:.0f}%, "
-                        f"recuo {bf['flag_retrace']:.0f}% (candidato)")
+                        f"recuo {bf['flag_retrace']:.0f}%, bandeira {bf['flag_dias']}d "
+                        f"(candidato)")
         else:
             res.note = f"sem sinal ({res.trend})"
     else:
