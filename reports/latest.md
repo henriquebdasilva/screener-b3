@@ -4,7 +4,7 @@
 
 > Material analítico gerado automaticamente. **Não é recomendação de investimento.** Preços/fundamentos de fontes públicas podem conter erros ou defasagem. O rompimento/pivô é um port do algoritmo de referência (`breakout.py`) e serve como **flag de timing**, não como filtro.
 
-## Papéis nos critérios fundamentalistas — 28 (5 com oportunidade gráfica)
+## Papéis nos critérios fundamentalistas — 28 (4 com oportunidade gráfica)
 
 | ticker   | origem                  | setor                        |   investment |   quality |   value |   safety |   dividend | oport_grafica   | trend    |   close |   pct_to_level |
 |----------|-------------------------|------------------------------|--------------|-----------|---------|----------|------------|-----------------|----------|---------|----------------|
@@ -32,7 +32,7 @@
 | TOTS3    | BOVA11+SMALL11+Wishlist | Tecnologia de informação     |        61.35 |     86.12 |   31.58 |    50.01 |      14.08 | Rompimento      | Em Alta  |   32.75 |       0.73824  |
 | BBDC3    | BOVA11                  | Produtos financeiros         |        60.45 |     48.9  |   69.36 |    66.43 |      74.65 | Não             | Em Baixa |   14.78 |      -7.17163  |
 | ITSA4    | BOVA11                  | Financial Services           |        60.44 |     60.65 |   48.61 |   nan    |      80.28 | Não             | Em Baixa |   12.85 |      -6.40932  |
-| CMIN3    | BOVA11                  | Materiais                    |        60.02 |     82.75 |   45.84 |    34.18 |      97.89 | Fundo duplo     | Lateral  |    5.88 |      -1.50753  |
+| CMIN3    | BOVA11                  | Materiais                    |        60.02 |     82.75 |   45.84 |    34.18 |      97.89 | Não             | Lateral  |    5.88 |      -1.50753  |
 | ITUB4    | BOVA11                  | Produtos financeiros         |        59.94 |     58.52 |   40.17 |    70.71 |      67.61 | Não             | Em Baixa |   39.44 |      -6.93724  |
 | ISAE4    | BOVA11                  | Serviços públicos            |        59.45 |     61.14 |   48.74 |    60.22 |      76.06 | Não             | Em Baixa |   26.46 |      -0.935979 |
 | ABEV3    | BOVA11                  | Bens de primeira necessidade |        58.87 |     79.37 |   17.32 |    66.34 |      53.52 | Não             | Em Baixa |   15.31 |      -3.52867  |
