@@ -527,9 +527,9 @@ def _defensivas_section(df: pd.DataFrame, thr: float) -> str:
     if df is None or df.empty:
         return (f'<h2 style="{_H2}">{title}</h2>'
                 f'<p class="empty">Nenhuma selecionada nesse critério hoje.</p>')
-    sub = ('<p class="sub" style="margin:0 0 8px">Recorte das selecionadas (BOVA11 + SMALL11 '
-           'juntas) em setores menos sensíveis ao ciclo econômico. Indicadores e preços-teto '
-           'destes papéis estão nas seções BOVA11/SMALL11 acima.</p>')
+    sub = ('<p class="sub" style="margin:0 0 8px">Recorte das <b>blue chips</b> selecionadas '
+           '(BOVA11) em setores menos sensíveis ao ciclo econômico. Small caps ficam fora desta '
+           'seção. Indicadores e preços-teto destes papéis estão na seção BOVA11 acima.</p>')
     rows = "".join(_fmt_row(r) for _, r in df.iterrows())
     return (f'<h2 style="{_H2}">{title} — {len(df)} papéis</h2>{sub}'
             f'<table>{_main_head()}{rows}</table>')
@@ -640,7 +640,8 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
         small = selecionados[grp == "SMALL11"]
         if "ciclicidade" in selecionados.columns:
             cyc = pd.to_numeric(selecionados["ciclicidade"], errors="coerce")
-            defensivas = selecionados[cyc <= defensive_cyc].sort_values(
+            # Defensivas = baixa ciclicidade E blue chip (BOVA11); smallcaps ficam fora
+            defensivas = selecionados[(cyc <= defensive_cyc) & (grp == "BOVA11")].sort_values(
                 "investment", ascending=False)
         else:
             defensivas = selecionados.iloc[0:0]

@@ -428,11 +428,14 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             fr = group_top if group_top is not None else q_map.get(g, top_quantile)
             thr_full.loc[sub.index] = sub["investment"].quantile(1 - fr)
         passa_grupo = df["investment"].ge(thr_full).fillna(False)
-        # pool DEFENSIVO: fração própria (mais permissiva), mesma def. da seção Defensivas
+        # pool DEFENSIVO: fração própria (mais permissiva) — SÓ para blue chips (BOVA11).
+        # Smallcaps defensivas seguem no corte do SMALL11 (não ganham a folga de 70%).
         passa_def = pd.Series(False, index=df.index)
         if group_top is None and "ciclicidade" in df.columns:
-            is_def = df["ciclicidade"] <= defensive_max_cyc
-            def_surv = surv[surv["ciclicidade"] <= defensive_max_cyc]
+            eh_bluechip = df["grupo"] == "BOVA11"
+            is_def = (df["ciclicidade"] <= defensive_max_cyc) & eh_bluechip
+            def_surv = surv[(surv["ciclicidade"] <= defensive_max_cyc)
+                            & (surv["grupo"] == "BOVA11")]
             if len(def_surv):
                 thr_def = def_surv["investment"].quantile(1 - q_defensive)
                 passa_def = (is_def & df["investment"].ge(thr_def)).fillna(False)
