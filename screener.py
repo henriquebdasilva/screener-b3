@@ -32,9 +32,10 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
         send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
-        breakout_max_ext=0.08, pivot_max_ext=0.06, pivot_lower_frac=0.5,
+        breakout_max_ext=0.04, pivot_max_ext=0.04, flag_max_ext=0.04, pivot_lower_frac=0.5,
         pattern_max_ext=0.10,
         flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05, trend_ma_long=30,
+        pattern_max_sep=45,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
@@ -104,12 +105,14 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 min_breakout_margin_pct=breakout_margin_pct,
                 breakout_max_ext=breakout_max_ext,
                 pivot_max_ext=pivot_max_ext,
+                flag_max_ext=flag_max_ext,
                 pivot_lower_frac=pivot_lower_frac,
                 pattern_max_ext=pattern_max_ext,
                 flag_min_dias=flag_min_dias,
                 flag_pole_min=flag_pole_min,
                 flag_min_retrace=flag_min_retrace,
                 trend_ma_long=trend_ma_long,
+                pattern_max_sep=pattern_max_sep,
             )
             if use_avg_dy:
                 avg_dy[tk] = avg_annual_dy(px, dy_years)
@@ -736,11 +739,13 @@ def parse_args():
                    help="amplitude máx. da consolidação p/ rompimento (%%, default 10)")
     p.add_argument("--breakout-margin-pct", type=float, default=1.5,
                    help="margem mínima acima do topo p/ validar rompimento (%%, default 1.5)")
-    p.add_argument("--breakout-max-ext", type=float, default=0.08,
-                   help="extensão MÁX. do rompimento acima do topo (fração, default 0.08 = 8%%; "
-                        "evita perseguir rompimento esticado)")
-    p.add_argument("--pivot-max-ext", type=float, default=0.06,
-                   help="extensão máx. do pivô acima do topo da consolidação (default 0.06)")
+    p.add_argument("--breakout-max-ext", type=float, default=0.04,
+                   help="extensão MÁX. do rompimento acima do topo rompido (fração, "
+                        "default 0.04 = 4%%; evita perseguir rompimento esticado)")
+    p.add_argument("--pivot-max-ext", type=float, default=0.04,
+                   help="extensão máx. do pivô acima do topo da consolidação (default 0.04)")
+    p.add_argument("--flag-max-ext", type=float, default=0.04,
+                   help="extensão máx. da bandeira acima da linha superior/mastro (default 0.04)")
     p.add_argument("--pivot-lower-frac", type=float, default=0.5,
                    help="pivô só na parte inferior da consolidação: fração da faixa a "
                         "partir do fundo (default 0.5 = metade inferior; 0.33 = terço inferior)")
@@ -756,6 +761,9 @@ def parse_args():
     p.add_argument("--trend-ma-long", type=int, default=30,
                    help="período da média móvel LONGA usada na tendência, junto da MM21 "
                         "(default 30)")
+    p.add_argument("--pattern-max-sep", type=int, default=45,
+                   help="separação MÁXIMA (pregões) entre os fundos de um fundo duplo/triplo "
+                        "(default 45; evita casar vales distantes que não formam um W)")
     p.add_argument("--dy-years", type=int, default=5,
                    help="janela (anos) do DY médio usado no preço-teto (default 5)")
     p.add_argument("--no-avg-dy", action="store_true",
@@ -849,12 +857,14 @@ if __name__ == "__main__":
         breakout_margin_pct=a.breakout_margin_pct,
         breakout_max_ext=a.breakout_max_ext,
         pivot_max_ext=a.pivot_max_ext,
+        flag_max_ext=a.flag_max_ext,
         pivot_lower_frac=a.pivot_lower_frac,
         pattern_max_ext=a.pattern_max_ext,
         flag_min_dias=a.flag_min_dias,
         flag_pole_min=a.flag_pole_min,
         flag_min_retrace=a.flag_min_retrace,
         trend_ma_long=a.trend_ma_long,
+        pattern_max_sep=a.pattern_max_sep,
         dy_years=a.dy_years, use_avg_dy=not a.no_avg_dy,
         bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto,
         teto_outlier_mult=a.teto_outlier_mult,

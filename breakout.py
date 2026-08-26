@@ -202,7 +202,7 @@ def _local_minima(series: pd.Series, order: int = 5) -> list:
 
 
 def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
-                         min_sep: int = 10, neckline_min: float = 0.08,
+                         min_sep: int = 10, max_sep: int = 45, neckline_min: float = 0.08,
                          drop_min: float = 0.20, order: int = 5,
                          max_bars_since: int = 20, max_ext: float = 0.10,
                          debug: bool = False, ticker: str = ""):
@@ -234,7 +234,10 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
     for b in range(len(mins) - 1, 0, -1):
         for a in range(b - 1, -1, -1):
             i1, i2 = mins[a], mins[b]
-            if i2 - i1 < min_sep:
+            if i2 - i1 < min_sep or i2 - i1 > max_sep:
+                if debug and i2 - i1 > max_sep:
+                    _dbg(f"par idx{i1}/idx{i2}: fundos MUITO distantes "
+                         f"({i2 - i1} pregões > {max_sep}) — descartado (não é um W)")
                 continue
             p1, p2 = float(close.iloc[i1]), float(close.iloc[i2])
             if abs(p1 - p2) / min(p1, p2) > tol:          # fundos alinhados (≤2%)
@@ -270,12 +273,13 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
 
 
 def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.02,
-                         min_sep: int = 8, neckline_min: float = 0.08,
+                         min_sep: int = 8, max_sep: int = 45, neckline_min: float = 0.08,
                          drop_min: float = 0.20, order: int = 5,
                          max_bars_since: int = 20, max_ext: float = 0.10):
     """Fundo triplo — reversão. Três fundos alinhados (≤tol) com picos entre eles, após
     tendência de baixa + queda ≥drop_min; CONFIRMA no rompimento da resistência — só se o
-    rompimento for RECENTE (≤max_bars_since) e o preço não estiver ESTICADO (≤max_ext)."""
+    rompimento for RECENTE (≤max_bars_since) e o preço não estiver ESTICADO (≤max_ext).
+    Fundos consecutivos entre min_sep e max_sep pregões (nem colados, nem distantes demais)."""
     close = df["Close"].iloc[-lookback:]
     if len(close) < 60:
         return None
@@ -286,6 +290,8 @@ def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.02,
     cur = float(close.iloc[-1])
     i1, i2, i3 = mins[-3], mins[-2], mins[-1]
     if (i2 - i1) < min_sep or (i3 - i2) < min_sep:
+        return None
+    if (i2 - i1) > max_sep or (i3 - i2) > max_sep:        # fundos distantes demais -> não é padrão
         return None
     ps = [float(close.iloc[i]) for i in (i1, i2, i3)]
     base = min(ps)
@@ -382,14 +388,16 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     require_volume: bool = True, vol_mult: float = 1.5,
                     require_trend: bool = True,
                     pivot_consol_pct: float = 20.0,
-                    breakout_max_ext: float = 0.08,
-                    pivot_max_ext: float = 0.06,
+                    breakout_max_ext: float = 0.04,
+                    pivot_max_ext: float = 0.04,
                     pivot_lower_frac: float = 0.5,
                     pattern_max_ext: float = 0.10,
+                    flag_max_ext: float = 0.04,
                     flag_min_dias: int = 7,
                     flag_pole_min: float = 0.12,
                     flag_min_retrace: float = 0.05,
                     trend_ma_long: int = 30,
+                    pattern_max_sep: int = 45,
                     detect_patterns: bool = True,
                     **_ignored) -> BreakoutResult:
     """Rompimento/pivô com filtros de assertividade sobre o algoritmo original.
@@ -473,9 +481,10 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
         # padrões adicionais (candidatos), só fora de tendência de baixa
         _pdbg = os.getenv("PATTERN_DEBUG", "").upper() == str(ticker or "").upper() \
             and bool(os.getenv("PATTERN_DEBUG"))
-        db = detect_double_bottom(df, max_ext=pattern_max_ext, debug=_pdbg, ticker=ticker)
-        tb = detect_triple_bottom(df, max_ext=pattern_max_ext)
-        bf = detect_bull_flag(df, max_ext=pattern_max_ext, flag_min=flag_min_dias,
+        db = detect_double_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep,
+                                  debug=_pdbg, ticker=ticker)
+        tb = detect_triple_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep)
+        bf = detect_bull_flag(df, max_ext=flag_max_ext, flag_min=flag_min_dias,
                               pole_min=flag_pole_min, flag_min_retrace=flag_min_retrace)
         if tb:
             res.signal, res.strategy = True, TRIPLE_BOTTOM_STR
