@@ -34,7 +34,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
         breakout_max_ext=0.08, pivot_max_ext=0.06, pivot_lower_frac=0.5,
         pattern_max_ext=0.10,
-        flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05,
+        flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05, trend_ma_long=30,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
@@ -102,6 +102,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 flag_min_dias=flag_min_dias,
                 flag_pole_min=flag_pole_min,
                 flag_min_retrace=flag_min_retrace,
+                trend_ma_long=trend_ma_long,
             )
             if use_avg_dy:
                 avg_dy[tk] = avg_annual_dy(px, dy_years)
@@ -742,6 +743,9 @@ def parse_args():
                    help="alta mínima do mastro da bandeira (fração, default 0.12 = 12%%)")
     p.add_argument("--flag-min-retrace", type=float, default=0.05,
                    help="recuo MÍNIMO da bandeira, fração do mastro (default 0.05 = 5%%)")
+    p.add_argument("--trend-ma-long", type=int, default=30,
+                   help="período da média móvel LONGA usada na tendência, junto da MM21 "
+                        "(default 30)")
     p.add_argument("--dy-years", type=int, default=5,
                    help="janela (anos) do DY médio usado no preço-teto (default 5)")
     p.add_argument("--no-avg-dy", action="store_true",
@@ -840,6 +844,7 @@ if __name__ == "__main__":
         flag_min_dias=a.flag_min_dias,
         flag_pole_min=a.flag_pole_min,
         flag_min_retrace=a.flag_min_retrace,
+        trend_ma_long=a.trend_ma_long,
         dy_years=a.dy_years, use_avg_dy=not a.no_avg_dy,
         bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto,
         teto_outlier_mult=a.teto_outlier_mult,

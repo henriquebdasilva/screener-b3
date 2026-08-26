@@ -10,7 +10,8 @@ Reproduz as regras originais:
     `percentage`% abaixo da máxima (i.e. a ação andou "de lado").
   • ROMPIMENTO (is_breaking_out): consolidada E último fechamento > máxima dos 15
     fechamentos anteriores (df[-16:-1]).
-  • TENDÊNCIA (is_uptrend): via MM21 — 'Em Alta' / 'Lateral' / 'Em Baixa'.
+  • TENDÊNCIA (is_uptrend): via MM21 + MM30 — Em Alta (ambas subindo e preço acima da MM30),
+#    Em Baixa (ambas caindo e preço abaixo), Lateral nos demais casos.
   • PIVÔ DE ALTA (is_pivoting): consolidada, NÃO rompendo, com recuo e retomada,
     confirmado por preço OU engolfo de alta OU martelo (candlestick).
 
@@ -94,20 +95,28 @@ def is_breaking_out(df, percentage, min_days, max_days, margin_pct=0.0) -> bool:
     return False
 
 
-def is_uptrend(df) -> str:
-    days_before = 7
-    q = df.copy()
-    if q.empty or len(q) < 30:
+def is_uptrend(df, curto: int = 21, longo: int = 30) -> str:
+    """Tendência via DUAS médias móveis (curta = MM21 e longa = MM30):
+      • Em Alta  : ambas as médias subindo E preço acima da MM longa;
+      • Em Baixa : ambas as médias caindo E preço abaixo da MM longa;
+      • Lateral  : nos demais casos (médias divergindo, ou preço no meio).
+    Exigir a concordância das DUAS médias (curto e longo prazo) reduz falsos sinais de
+    tendência. Histórico curto -> 'Em Alta' (default, como antes)."""
+    if df is None or len(df) < longo + 6:
         return EM_ALTA_STR
-    q["MM21"] = q["Close"].rolling(21).mean()
-    trend = EM_ALTA_STR
-    for i in range(days_before):
-        if q["MM21"].iloc[-i - 1] < q["MM21"].iloc[-i - 2]:
-            if q["MM21"].iloc[-days_before:-1].mean() > q["MM21"].iloc[-1]:
-                trend = EM_BAIXA_STR
-            else:
-                trend = LATERAL_STR
-    return trend
+    close = df["Close"]
+    mmc = close.rolling(curto).mean()
+    mml = close.rolling(longo).mean()
+    price = float(close.iloc[-1])
+    ref = 6                                              # inclinação vs ~5 pregões atrás
+    c_up, c_dn = mmc.iloc[-1] > mmc.iloc[-ref], mmc.iloc[-1] < mmc.iloc[-ref]
+    l_up, l_dn = mml.iloc[-1] > mml.iloc[-ref], mml.iloc[-1] < mml.iloc[-ref]
+    mml_now = float(mml.iloc[-1])
+    if c_up and l_up and price >= mml_now:
+        return EM_ALTA_STR
+    if c_dn and l_dn and price <= mml_now:
+        return EM_BAIXA_STR
+    return LATERAL_STR
 
 
 # ---- candlestick (TA-Lib se houver; senão, pandas puro) ----
@@ -357,6 +366,7 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     flag_min_dias: int = 7,
                     flag_pole_min: float = 0.12,
                     flag_min_retrace: float = 0.05,
+                    trend_ma_long: int = 30,
                     detect_patterns: bool = True,
                     **_ignored) -> BreakoutResult:
     """Rompimento/pivô com filtros de assertividade sobre o algoritmo original.
@@ -389,7 +399,7 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
     except Exception:
         pass
 
-    res.trend = is_uptrend(df)
+    res.trend = is_uptrend(df, longo=trend_ma_long)
     sma50 = _sma(close, 50).iloc[-1]
     sma200 = _sma(close, 200).iloc[-1]
     res.above_sma200 = bool(pd.notna(sma200) and res.close > sma200)
