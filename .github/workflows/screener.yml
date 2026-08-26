@@ -66,6 +66,7 @@ jobs:
           SELIC: ${{ secrets.SELIC }}
           INSIDER_CHECK: ${{ secrets.INSIDER_CHECK }}
           BASILEIA_DEBUG: ${{ secrets.BASILEIA_DEBUG }}
+          PATTERN_DEBUG: ${{ secrets.PATTERN_DEBUG }}
         run: |
           python screener.py --universe "$UNIVERSE" \
             --q-bluechip "$QBLUE" --q-smallcap "$QSMALL" --q-defensive "$QDEF" \
