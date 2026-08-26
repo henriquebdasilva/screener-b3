@@ -40,6 +40,8 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
+__build__ = "2026-08-25-frescor+mm30+pivo-inferior"   # marcador de versão (aparece no log)
+
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
 LATERAL_STR = "Lateral"

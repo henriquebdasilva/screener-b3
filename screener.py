@@ -46,6 +46,13 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         min_margin=8.0, min_roe=10.0,
         defensive_lev_mult=1.8, defensive_lev_cyc=0.2):
 
+    try:
+        import breakout as _bk
+        _bld = getattr(_bk, "__build__", "ANTIGA (sem marcador — atualize o breakout.py!)")
+        print(f"[build] breakout: {_bld}")
+    except Exception:
+        pass
+
     tickers = get_universe(universe)
     from watchlist import get_wishlist, get_carteira
     wl, cart = get_wishlist(), get_carteira()
