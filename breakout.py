@@ -31,6 +31,7 @@ from dataclasses import dataclass, asdict
 
 import numpy as np
 import pandas as pd
+import os
 
 # ---- constantes originais do repositório ----
 NARROW_VARIATION_PERCENTAGE_PIVOT = 20
@@ -203,7 +204,8 @@ def _local_minima(series: pd.Series, order: int = 5) -> list:
 def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
                          min_sep: int = 10, neckline_min: float = 0.08,
                          drop_min: float = 0.20, order: int = 5,
-                         max_bars_since: int = 20, max_ext: float = 0.10):
+                         max_bars_since: int = 20, max_ext: float = 0.10,
+                         debug: bool = False, ticker: str = ""):
     """Fundo duplo (W) — padrão de REVERSÃO. Exige:
       • tendência de BAIXA antes do padrão (is_uptrend do trecho anterior aos fundos) e
         queda ≥ drop_min de um topo prévio até os fundos;
@@ -220,6 +222,15 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
     if len(mins) < 2:
         return None
     cur = float(close.iloc[-1])
+
+    def _dbg(msg):
+        if debug:
+            print(f"[padrao-debug {ticker}] {msg}")
+
+    if debug:
+        _dbg(f"{len(mins)} mínimos locais em R$: " +
+             ", ".join(f"{float(close.iloc[i]):.2f}(idx{i})" for i in mins))
+
     for b in range(len(mins) - 1, 0, -1):
         for a in range(b - 1, -1, -1):
             i1, i2 = mins[a], mins[b]
@@ -231,19 +242,29 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
             peak = float(close.iloc[i1:i2 + 1].max())
             base = min(p1, p2)
             if peak / base - 1 < neckline_min:            # pescoço ~8% acima
+                _dbg(f"par R${p1:.2f}/R${p2:.2f}: pescoço R${peak:.2f} baixo demais "
+                     f"({(peak/base-1)*100:.1f}% < {neckline_min*100:.0f}%) — descartado")
                 continue
-            if not (cur > peak and float(close.iloc[i2:].min()) >= base * (1 - tol)):
-                continue                                   # confirma rompimento do pescoço
-            # rompimento RECENTE e não ESTICADO (senão o sinal é velho)
+            confirma = cur > peak and float(close.iloc[i2:].min()) >= base * (1 - tol)
             after = close.iloc[i2:]
             broke_idx = next((i2 + j for j in range(len(after))
                               if float(after.iloc[j]) > peak), None)
-            if broke_idx is None or (len(close) - 1 - broke_idx) > max_bars_since:
+            bars_since = (len(close) - 1 - broke_idx) if broke_idx is not None else None
+            ext = cur / peak - 1
+            rev = _reversal_context(df, offset + i1, base, lookback, drop_min)
+            _dbg(f"par R${p1:.2f}(idx{i1})/R${p2:.2f}(idx{i2}) pescoço R${peak:.2f} | "
+                 f"confirma_rompimento={confirma} | rompeu há {bars_since} pregões "
+                 f"(máx {max_bars_since}) | extensão {ext*100:+.1f}% (máx {max_ext*100:.0f}%) | "
+                 f"reversão(baixa+queda≥{drop_min*100:.0f}%)={rev}")
+            if not confirma:
+                continue                                   # confirma rompimento do pescoço
+            if broke_idx is None or bars_since > max_bars_since:
                 continue                                   # rompeu há muito tempo
-            if cur / peak - 1 > max_ext:                   # já subiu demais acima do pescoço
+            if ext > max_ext:                              # já subiu demais acima do pescoço
                 continue
-            if not _reversal_context(df, offset + i1, base, lookback, drop_min):
-                continue                                   # exige baixa + queda ≥20% antes
+            if not rev:
+                continue                                   # exige baixa + queda antes
+            _dbg(f">>> FUNDO DUPLO CONFIRMADO: pescoço R${peak:.2f}, base R${base:.2f}")
             return {"neckline": peak, "base": base}
     return None
 
@@ -450,7 +471,9 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
         res.note = "Pivô de alta"
     elif detect_patterns and res.trend != EM_BAIXA_STR:
         # padrões adicionais (candidatos), só fora de tendência de baixa
-        db = detect_double_bottom(df, max_ext=pattern_max_ext)
+        _pdbg = os.getenv("PATTERN_DEBUG", "").upper() == str(ticker or "").upper() \
+            and bool(os.getenv("PATTERN_DEBUG"))
+        db = detect_double_bottom(df, max_ext=pattern_max_ext, debug=_pdbg, ticker=ticker)
         tb = detect_triple_bottom(df, max_ext=pattern_max_ext)
         bf = detect_bull_flag(df, max_ext=pattern_max_ext, flag_min=flag_min_dias,
                               pole_min=flag_pole_min, flag_min_retrace=flag_min_retrace)
