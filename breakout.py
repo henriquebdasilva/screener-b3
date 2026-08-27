@@ -41,7 +41,7 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
-__build__ = "2026-08-27b-pivo-adaptativo+frac05"   # marcador de versão (aparece no log)
+__build__ = "2026-08-27d-base-estruturada"   # marcador de versão (aparece no log)
 
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
@@ -97,6 +97,41 @@ def is_breaking_out(df, percentage, min_days, max_days, margin_pct=0.0) -> bool:
         if len(recent) and last_close > recent.max() * (1 + margin_pct / 100.0):
             return True
     return False
+
+
+def range_estruturado(janela: pd.Series, edge_frac: float = 0.30,
+                      min_toques: int = 2) -> bool:
+    """A janela é uma BASE de verdade (oscila entre suporte e resistência) e não um 'drift'?
+
+    Uma amplitude pequena, sozinha, não distingue uma base real de uma subida lenta em linha
+    reta — as duas cabem no mesmo percentual. Aqui exigimos ESTRUTURA: o preço precisa ter
+    visitado a região BAIXA (≤ edge_frac da faixa, medindo do fundo) e a região ALTA
+    (≥ 1-edge_frac) pelo menos `min_toques` vezes cada. Assim o rompimento sai de uma base
+    testada dos dois lados, não de um movimento direcional disfarçado de consolidação.
+    """
+    if janela is None or len(janela) < 5:
+        return False
+    v = pd.to_numeric(janela, errors="coerce").dropna()
+    if len(v) < 5:
+        return False
+    lo, hi = float(v.min()), float(v.max())
+    faixa = hi - lo
+    if faixa <= 0:
+        return False
+    pos = (v - lo) / faixa                                # 0 = fundo, 1 = topo da faixa
+    toques_baixo = int((pos <= edge_frac).sum())
+    toques_alto = int((pos >= 1.0 - edge_frac).sum())
+    if toques_baixo < min_toques or toques_alto < min_toques:
+        return False
+    # ALTERNÂNCIA: numa subida em linha reta os pontos baixos vêm todos antes dos altos, o que
+    # satisfaria a contagem sem ser base. Exigimos que o preço ALTERNE entre as bordas — pelo
+    # menos `min_toques` transições baixo->alto ou alto->baixo ao longo da janela.
+    seq = []
+    for p in pos:
+        z = "B" if p <= edge_frac else ("A" if p >= 1.0 - edge_frac else None)
+        if z and (not seq or seq[-1] != z):
+            seq.append(z)                                 # registra só as mudanças de borda
+    return len(seq) - 1 >= min_toques                      # nº de transições entre bordas
 
 
 def is_uptrend(df, curto: int = 21, longo: int = 30) -> str:
@@ -472,7 +507,10 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     require_volume: bool = True, vol_mult: float = 1.5,
                     require_trend: bool = True,
                     pivot_consol_pct: float = 20.0,
-                    breakout_max_ext: float = 0.04,
+                    breakout_max_ext: float = 0.03,
+                    require_base_structure: bool = True,
+                    base_edge_frac: float = 0.30,
+                    base_min_toques: int = 2,
                     pivot_max_ext: float = 0.04,
                     pivot_lower_frac: float = 0.5,
                     pivot_range_pct: float = 5.0,
@@ -531,7 +569,10 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
     # extensão: não sinalizar rompimento já esticado acima do topo rompido
     ext_ok = (pd.isna(res.pct_to_level) or
               res.pct_to_level <= breakout_max_ext * 100.0)
-    breakout = bool(broke_raw and vol_ok and trend_ok and ext_ok)
+    # ESTRUTURA: a base tem que ter sido testada nas duas bordas (não vale 'drift' direcional)
+    estrut_ok = (not require_base_structure) or range_estruturado(
+        recent, edge_frac=base_edge_frac, min_toques=base_min_toques)
+    breakout = bool(broke_raw and vol_ok and trend_ok and ext_ok and estrut_ok)
 
     # ---- PIVÔ: recuo ao suporte que vira p/ cima DENTRO de tendência de alta ----
     #   • tendência de ALTA ESTRUTURAL (preço > MM200 e MM50 > MM200) — a consolidação achata a

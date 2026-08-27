@@ -32,7 +32,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
         send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
-        breakout_max_ext=0.04, pivot_max_ext=0.04, flag_max_ext=0.04, pivot_lower_frac=0.5, pivot_range_pct=5.0,
+        breakout_max_ext=0.03, require_base_structure=True, base_edge_frac=0.30,
+        base_min_toques=2, pivot_max_ext=0.04, flag_max_ext=0.04, pivot_lower_frac=0.5, pivot_range_pct=5.0,
         pattern_max_ext=0.10,
         flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05, trend_ma_long=30,
         pattern_max_sep=45,
@@ -104,6 +105,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 breakout_consol_pct=breakout_consol_pct,
                 min_breakout_margin_pct=breakout_margin_pct,
                 breakout_max_ext=breakout_max_ext,
+                require_base_structure=require_base_structure,
+                base_edge_frac=base_edge_frac,
+                base_min_toques=base_min_toques,
                 pivot_max_ext=pivot_max_ext,
                 flag_max_ext=flag_max_ext,
                 pivot_lower_frac=pivot_lower_frac,
@@ -740,7 +744,14 @@ def parse_args():
                    help="amplitude máx. da consolidação p/ rompimento (%%, default 10)")
     p.add_argument("--breakout-margin-pct", type=float, default=1.5,
                    help="margem mínima acima do topo p/ validar rompimento (%%, default 1.5)")
-    p.add_argument("--breakout-max-ext", type=float, default=0.04,
+    p.add_argument("--no-base-structure", action="store_true",
+                   help="desliga a exigência de BASE ESTRUTURADA no rompimento (a base "
+                        "precisa ter sido testada nas duas bordas, não vale subida em reta)")
+    p.add_argument("--base-edge-frac", type=float, default=0.30,
+                   help="fração da faixa que conta como borda (default 0.30)")
+    p.add_argument("--base-min-toques", type=int, default=2,
+                   help="nº mínimo de transições entre as bordas da base (default 2)")
+    p.add_argument("--breakout-max-ext", type=float, default=0.03,
                    help="extensão MÁX. do rompimento acima do topo rompido (fração, "
                         "default 0.04 = 4%%; evita perseguir rompimento esticado)")
     p.add_argument("--pivot-max-ext", type=float, default=0.04,
@@ -860,6 +871,9 @@ if __name__ == "__main__":
         breakout_consol_pct=a.breakout_consol_pct,
         breakout_margin_pct=a.breakout_margin_pct,
         breakout_max_ext=a.breakout_max_ext,
+        require_base_structure=not a.no_base_structure,
+        base_edge_frac=a.base_edge_frac,
+        base_min_toques=a.base_min_toques,
         pivot_max_ext=a.pivot_max_ext,
         flag_max_ext=a.flag_max_ext,
         pivot_lower_frac=a.pivot_lower_frac,
