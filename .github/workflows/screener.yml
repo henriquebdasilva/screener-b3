@@ -71,7 +71,7 @@ jobs:
           python screener.py --universe "$UNIVERSE" \
             --q-bluechip "$QBLUE" --q-smallcap "$QSMALL" --q-defensive "$QDEF" \
             --no-volume --no-trend \
-            --breakout-consol-pct 12 \
+            --breakout-consol-pct 8 \
             --min-marketcap 700
 
       - name: Commitar relatórios
