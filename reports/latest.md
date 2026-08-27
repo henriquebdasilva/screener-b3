@@ -4,7 +4,7 @@
 
 > Material analítico gerado automaticamente. **Não é recomendação de investimento.** Preços/fundamentos de fontes públicas podem conter erros ou defasagem. O rompimento/pivô é um port do algoritmo de referência (`breakout.py`) e serve como **flag de timing**, não como filtro.
 
-## Papéis nos critérios fundamentalistas — 35 (8 com oportunidade gráfica)
+## Papéis nos critérios fundamentalistas — 35 (5 com oportunidade gráfica)
 
 | ticker   | origem                  | setor                        |   investment |   quality |   value |   safety |   dividend | oport_grafica   | trend    |   close |   pct_to_level |
 |----------|-------------------------|------------------------------|--------------|-----------|---------|----------|------------|-----------------|----------|---------|----------------|
@@ -28,13 +28,13 @@
 | DIRR3    | BOVA11+SMALL11          | Consumo discricionário       |        65.95 |     71.96 |   51.49 |    54.48 |      90.78 | Não             | Em Baixa |   11.01 |      -6.77392  |
 | MULT3    | BOVA11+SMALL11          | Imobiliário                  |        63.23 |     86.46 |   41.32 |    43.74 |      40.43 | Não             | Em Baixa |   27.42 |      -4.45993  |
 | BBSE3    | BOVA11                  | Insurance                    |        62.22 |     67.92 |   31.94 |    61    |      92.2  | Pivô de alta    | Lateral  |   39.41 |      -0.611143 |
-| VIVA3    | BOVA11+SMALL11          | Consumo discricionário       |        61.91 |     76.54 |   51.61 |    66.01 |      17.02 | Rompimento      | Lateral  |   22.7  |       1.83939  |
+| VIVA3    | BOVA11+SMALL11          | Consumo discricionário       |        61.91 |     76.54 |   51.61 |    66.01 |      17.02 | Não             | Lateral  |   22.7  |       1.83939  |
 | TOTS3    | BOVA11+SMALL11+Wishlist | Tecnologia de informação     |        61.45 |     86.25 |   31.93 |    49.84 |      14.18 | Fundo duplo     | Em Alta  |   32.6  |      -0.45802  |
 | ITSA4    | BOVA11                  | Financial Services           |        60.37 |     60.83 |   47.8  |   nan    |      80.85 | Pivô de alta    | Em Baixa |   12.9  |      -6.04516  |
 | BBDC3    | BOVA11                  | Produtos financeiros         |        60.09 |     49    |   67.22 |    66.43 |      75.18 | Não             | Em Baixa |   14.92 |      -5.26984  |
 | ITUB4    | BOVA11                  | Produtos financeiros         |        60.07 |     58.69 |   40.31 |    70.71 |      68.09 | Não             | Em Baixa |   39.45 |      -6.91364  |
-| CMIN3    | BOVA11                  | Materiais                    |        60.02 |     82.86 |   45.8  |    34    |      97.87 | Rompimento      | Em Alta  |    5.99 |       0.335008 |
-| ISAE4    | BOVA11                  | Serviços públicos            |        59.32 |     61.05 |   47.86 |    60.54 |      76.6  | Rompimento      | Lateral  |   26.75 |       0.14976  |
+| CMIN3    | BOVA11                  | Materiais                    |        60.02 |     82.86 |   45.8  |    34    |      97.87 | Não             | Em Alta  |    5.99 |       0.335008 |
+| ISAE4    | BOVA11                  | Serviços públicos            |        59.32 |     61.05 |   47.86 |    60.54 |      76.6  | Não             | Lateral  |   26.75 |       0.14976  |
 | ABEV3    | BOVA11                  | Bens de primeira necessidade |        59.17 |     79.4  |   18.75 |    66.09 |      53.9  | Não             | Em Baixa |   15.24 |      -3.78788  |
 | TAEE11   | BOVA11+SMALL11          | Serviços públicos            |        58.5  |     73.32 |   26.25 |    48.71 |      89.36 | Não             | Lateral  |   38.94 |      -1.23325  |
 | BBDC4    | BOVA11                  | Produtos financeiros         |        58.09 |     49    |   58.96 |    66.43 |      72.34 | Não             | Em Baixa |   16.99 |      -5.87257  |
