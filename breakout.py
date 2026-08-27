@@ -41,7 +41,7 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
-__build__ = "2026-08-27d-base-estruturada"   # marcador de versão (aparece no log)
+__build__ = "2026-08-27e-fundoduplo-virada"   # marcador de versão (aparece no log)
 
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
@@ -240,7 +240,7 @@ def _local_minima(series: pd.Series, order: int = 5) -> list:
 def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
                          min_sep: int = 10, max_sep: int = 45, neckline_min: float = 0.08,
                          drop_min: float = 0.20, order: int = 5,
-                         max_bars_since: int = 20, max_ext: float = 0.10,
+                         max_bars_since: int = 10, max_ext: float = 0.05, exigir_virada: bool = True,
                          low_zone: float = 0.03, debug: bool = False, ticker: str = ""):
     """Fundo duplo (W) — padrão de REVERSÃO. Exige:
       • tendência de BAIXA antes do padrão e queda ≥ drop_min de um topo prévio até os fundos;
@@ -311,6 +311,16 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
                 continue
             if not rev:
                 continue                                   # exige baixa + queda antes
+            # A VIRADA TEM QUE SER O EVENTO: no SEGUNDO FUNDO (antes do repique final) a
+            # tendência ainda não podia ser "Em Alta". Se já era, a reversão ocorreu antes e
+            # este "W" é histórico — o papel está em alta madura, não virando agora.
+            if exigir_virada:
+                abs_i2 = offset + i2
+                pre_i2 = df.iloc[:abs_i2 + 1]              # dados até o 2º fundo
+                if len(pre_i2) >= 40 and is_uptrend(pre_i2) == EM_ALTA_STR:
+                    _dbg(f"descartado: no 2º fundo (idx{i2}) a tendência JÁ era 'Em Alta' — "
+                         f"reversão antiga, não é sinal de virada")
+                    continue
             _dbg(f">>> FUNDO DUPLO CONFIRMADO: pescoço R${peak:.2f}, base R${base:.2f}")
             return {"neckline": peak, "base": base}
     return None
@@ -319,7 +329,7 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
 def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.02,
                          min_sep: int = 8, max_sep: int = 45, neckline_min: float = 0.08,
                          drop_min: float = 0.20, order: int = 5,
-                         max_bars_since: int = 20, max_ext: float = 0.10,
+                         max_bars_since: int = 10, max_ext: float = 0.05,
                          low_zone: float = 0.15):
     """Fundo triplo — reversão. Três fundos alinhados (≤tol) com picos entre eles, após
     tendência de baixa + queda ≥drop_min; CONFIRMA no rompimento da resistência — só se o
@@ -522,6 +532,7 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     trend_ma_long: int = 30,
                     pattern_max_sep: int = 45,
                     pattern_low_zone: float = 0.03,
+                    pattern_exigir_virada: bool = True,
                     detect_patterns: bool = True,
                     **_ignored) -> BreakoutResult:
     """Rompimento/pivô com filtros de assertividade sobre o algoritmo original.
@@ -643,6 +654,7 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
             and bool(os.getenv("PATTERN_DEBUG"))
         db = detect_double_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep,
                                   low_zone=pattern_low_zone,
+                                  exigir_virada=pattern_exigir_virada,
                                   debug=_pdbg, ticker=ticker)
         tb = detect_triple_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep)
         ch = detect_cup_handle(df, max_ext=flag_max_ext, debug=_pdbg, ticker=ticker)

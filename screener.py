@@ -36,7 +36,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         base_min_toques=2, pivot_max_ext=0.04, flag_max_ext=0.04, pivot_lower_frac=0.5, pivot_range_pct=5.0,
         pattern_max_ext=0.10,
         flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05, trend_ma_long=30,
-        pattern_max_sep=45,
+        pattern_max_sep=45, no_pattern_virada=False,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
@@ -118,6 +118,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 flag_min_retrace=flag_min_retrace,
                 trend_ma_long=trend_ma_long,
                 pattern_max_sep=pattern_max_sep,
+                pattern_exigir_virada=not no_pattern_virada,
             )
             if use_avg_dy:
                 avg_dy[tk] = avg_annual_dy(px, dy_years)
@@ -776,6 +777,9 @@ def parse_args():
     p.add_argument("--trend-ma-long", type=int, default=30,
                    help="período da média móvel LONGA usada na tendência, junto da MM21 "
                         "(default 30)")
+    p.add_argument("--no-pattern-virada", action="store_true",
+                   help="desliga a exigência de que o fundo duplo represente a VIRADA "
+                        "(por padrão, no 2º fundo a tendência não podia já ser de alta)")
     p.add_argument("--pattern-max-sep", type=int, default=45,
                    help="separação MÁXIMA (pregões) entre os fundos de um fundo duplo/triplo "
                         "(default 45; evita casar vales distantes que não formam um W)")
@@ -884,6 +888,7 @@ if __name__ == "__main__":
         flag_min_retrace=a.flag_min_retrace,
         trend_ma_long=a.trend_ma_long,
         pattern_max_sep=a.pattern_max_sep,
+        no_pattern_virada=a.no_pattern_virada,
         dy_years=a.dy_years, use_avg_dy=not a.no_avg_dy,
         bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto,
         teto_outlier_mult=a.teto_outlier_mult,
