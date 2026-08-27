@@ -41,7 +41,7 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
-__build__ = "2026-08-26c-debug-pivo-rompimento"   # marcador de versão (aparece no log)
+__build__ = "2026-08-27b-pivo-adaptativo+frac05"   # marcador de versão (aparece no log)
 
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
@@ -474,7 +474,8 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     pivot_consol_pct: float = 20.0,
                     breakout_max_ext: float = 0.04,
                     pivot_max_ext: float = 0.04,
-                    pivot_lower_frac: float = 0.75,
+                    pivot_lower_frac: float = 0.5,
+                    pivot_range_pct: float = 5.0,
                     pattern_max_ext: float = 0.10,
                     flag_max_ext: float = 0.04,
                     flag_min_dias: int = 7,
@@ -543,33 +544,44 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
         MAX_DAYS_BEFORE_WINDOW_PIVOT)
     pivot_ext_ok, pivot_low_ok = True, True
     _pos_faixa = None
+    _lo_adapt = _hi_adapt = float("nan")
     try:
-        janela = close.iloc[-(MAX_DAYS_BEFORE_WINDOW_PIVOT + 1):-1]
-        if len(janela):
-            lo, hi = float(janela.min()), float(janela.max())
-            if res.close > hi * (1 + pivot_max_ext):          # esticado acima do topo
+        # JANELA ADAPTATIVA: usa a MAIOR janela recente que ainda é uma consolidação válida
+        # (amplitude ≤ pivot_consol_pct). A janela fixa longa mistura o rally com a pausa e joga
+        # o preço para o topo da "faixa"; a mais estreita degenera num trecho achatado. A maior
+        # janela válida representa a pausa inteira.
+        melhor = None
+        for w in range(5, MAX_DAYS_BEFORE_WINDOW_PIVOT + 1):
+            j = close.iloc[-(w + 1):-1]
+            if len(j) < 4:
+                continue
+            lo_w, hi_w = float(j.min()), float(j.max())
+            if lo_w <= 0 or hi_w <= 0:
+                continue
+            amp_pct = (hi_w - lo_w) / hi_w * 100.0        # amplitude da janela (%)
+            if amp_pct <= pivot_range_pct:                # pausa de verdade (faixa estreita)
+                melhor = (w, lo_w, hi_w)                  # guarda a MAIOR válida
+        if melhor:
+            _, lo, hi = melhor
+            _lo_adapt, _hi_adapt = lo, hi
+            if res.close > hi * (1 + pivot_max_ext):      # esticado acima do topo
                 pivot_ext_ok = False
             faixa = hi - lo
             if faixa > 0:
                 _pos_faixa = (res.close - lo) / faixa
                 if res.close > lo + pivot_lower_frac * faixa:
-                    pivot_low_ok = False                      # está acima da parte inferior
+                    pivot_low_ok = False                  # está acima da parte inferior
     except Exception:
         pass
     pivot = bool(pivot_raw and pivot_ext_ok and pivot_low_ok)
 
     if os.getenv("PATTERN_DEBUG", "").upper() == str(ticker or "").upper() \
             and os.getenv("PATTERN_DEBUG"):
-        try:
-            _j = close.iloc[-(MAX_DAYS_BEFORE_WINDOW_PIVOT + 1):-1]
-            _lo, _hi = (float(_j.min()), float(_j.max())) if len(_j) else (float("nan"),) * 2
-        except Exception:
-            _lo = _hi = float("nan")
         print(f"[padrao-debug {ticker}] (pivô) alta_estrutural="
               f"{bool(res.above_sma200 and res.sma50_gt_sma200)} "
               f"(>MM200={res.above_sma200}, MM50>MM200={res.sma50_gt_sma200}) | "
-              f"is_pivoting={bool(pivot_raw)} | faixa R${_lo:.2f}-R${_hi:.2f} "
-              f"fechou R${res.close:.2f}"
+              f"is_pivoting={bool(pivot_raw)} | faixa adaptativa "
+              f"R${_lo_adapt:.2f}-R${_hi_adapt:.2f} fechou R${res.close:.2f}"
               + (f" ({_pos_faixa*100:.0f}% da faixa, máx {pivot_lower_frac*100:.0f}%)"
                  if _pos_faixa is not None else "")
               + f" | posição_ok={pivot_low_ok} | extensão_ok={pivot_ext_ok} => PIVÔ={pivot}")

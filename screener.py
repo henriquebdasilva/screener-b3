@@ -32,7 +32,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         require_contraction=False, sleep=0.4, outdir="reports", limit=None,
         send_email=True, strict_criteria=False, mktcap_filter=True, enrich=True,
         force_ia=False, breakout_consol_pct=10.0, breakout_margin_pct=1.5,
-        breakout_max_ext=0.04, pivot_max_ext=0.04, flag_max_ext=0.04, pivot_lower_frac=0.75,
+        breakout_max_ext=0.04, pivot_max_ext=0.04, flag_max_ext=0.04, pivot_lower_frac=0.5, pivot_range_pct=5.0,
         pattern_max_ext=0.10,
         flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05, trend_ma_long=30,
         pattern_max_sep=45,
@@ -107,6 +107,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 pivot_max_ext=pivot_max_ext,
                 flag_max_ext=flag_max_ext,
                 pivot_lower_frac=pivot_lower_frac,
+                pivot_range_pct=pivot_range_pct,
                 pattern_max_ext=pattern_max_ext,
                 flag_min_dias=flag_min_dias,
                 flag_pole_min=flag_pole_min,
@@ -746,9 +747,12 @@ def parse_args():
                    help="extensão máx. do pivô acima do topo da consolidação (default 0.04)")
     p.add_argument("--flag-max-ext", type=float, default=0.04,
                    help="extensão máx. da bandeira acima da linha superior/mastro (default 0.04)")
-    p.add_argument("--pivot-lower-frac", type=float, default=0.75,
+    p.add_argument("--pivot-range-pct", type=float, default=5.0,
+                   help="amplitude máx. (%%) da janela usada para medir a consolidação do "
+                        "pivô — isola a pausa recente do rally (default 5)")
+    p.add_argument("--pivot-lower-frac", type=float, default=0.5,
                    help="pivô até esta fração da consolidação, medida a partir do fundo "
-                        "(default 0.75; 0.5 = só metade inferior; 0.33 = terço inferior)")
+                        "(default 0.5 = metade inferior; 0.33 = terço inferior; 0.75 = mais folga)")
     p.add_argument("--pattern-max-ext", type=float, default=0.10,
                    help="extensão máx. dos padrões (fundo duplo/triplo, bandeira) acima do "
                         "pescoço/linha (default 0.10 = 10%%)")
@@ -859,6 +863,7 @@ if __name__ == "__main__":
         pivot_max_ext=a.pivot_max_ext,
         flag_max_ext=a.flag_max_ext,
         pivot_lower_frac=a.pivot_lower_frac,
+        pivot_range_pct=a.pivot_range_pct,
         pattern_max_ext=a.pattern_max_ext,
         flag_min_dias=a.flag_min_dias,
         flag_pole_min=a.flag_pole_min,
