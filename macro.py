@@ -49,8 +49,10 @@ def sgs(cod: int, n: int = 1):
 
 
 def _last(cod: int):
+    """Último ponto da série como (valor, data) — mesma ordem do _sum12 e do uso em fetch_macro.
+    (sgs() devolve (data, valor); aqui invertemos para (valor, data).)"""
     s = sgs(cod, 1)
-    return s[-1] if s else (None, None)
+    return (s[-1][1], s[-1][0]) if s else (None, None)
 
 
 def _sum12(cod: int):

@@ -41,7 +41,7 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
-__build__ = "2026-08-26b-pivotfrac075+lowzone3+cuphandle"   # marcador de versão (aparece no log)
+__build__ = "2026-08-26c-debug-pivo-rompimento"   # marcador de versão (aparece no log)
 
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
@@ -542,6 +542,7 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
         df, pivot_consol_pct, MIN_DAYS_BEFORE_WINDOW_PIVOT,
         MAX_DAYS_BEFORE_WINDOW_PIVOT)
     pivot_ext_ok, pivot_low_ok = True, True
+    _pos_faixa = None
     try:
         janela = close.iloc[-(MAX_DAYS_BEFORE_WINDOW_PIVOT + 1):-1]
         if len(janela):
@@ -549,11 +550,32 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
             if res.close > hi * (1 + pivot_max_ext):          # esticado acima do topo
                 pivot_ext_ok = False
             faixa = hi - lo
-            if faixa > 0 and res.close > lo + pivot_lower_frac * faixa:
-                pivot_low_ok = False                          # está acima da parte inferior
+            if faixa > 0:
+                _pos_faixa = (res.close - lo) / faixa
+                if res.close > lo + pivot_lower_frac * faixa:
+                    pivot_low_ok = False                      # está acima da parte inferior
     except Exception:
         pass
     pivot = bool(pivot_raw and pivot_ext_ok and pivot_low_ok)
+
+    if os.getenv("PATTERN_DEBUG", "").upper() == str(ticker or "").upper() \
+            and os.getenv("PATTERN_DEBUG"):
+        try:
+            _j = close.iloc[-(MAX_DAYS_BEFORE_WINDOW_PIVOT + 1):-1]
+            _lo, _hi = (float(_j.min()), float(_j.max())) if len(_j) else (float("nan"),) * 2
+        except Exception:
+            _lo = _hi = float("nan")
+        print(f"[padrao-debug {ticker}] (pivô) alta_estrutural="
+              f"{bool(res.above_sma200 and res.sma50_gt_sma200)} "
+              f"(>MM200={res.above_sma200}, MM50>MM200={res.sma50_gt_sma200}) | "
+              f"is_pivoting={bool(pivot_raw)} | faixa R${_lo:.2f}-R${_hi:.2f} "
+              f"fechou R${res.close:.2f}"
+              + (f" ({_pos_faixa*100:.0f}% da faixa, máx {pivot_lower_frac*100:.0f}%)"
+                 if _pos_faixa is not None else "")
+              + f" | posição_ok={pivot_low_ok} | extensão_ok={pivot_ext_ok} => PIVÔ={pivot}")
+        print(f"[padrao-debug {ticker}] (rompimento) topo15={res.breakout_level:.2f} "
+              f"fechou R${res.close:.2f} ({res.pct_to_level:+.1f}% do topo, máx "
+              f"{breakout_max_ext*100:.0f}%) | tendência={res.trend} => ROMP={breakout}")
 
     if breakout:
         res.signal, res.strategy, res.days_since_breakout = True, BREAKOUT_STR, 0
