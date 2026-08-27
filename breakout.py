@@ -41,7 +41,7 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
-__build__ = "2026-08-25-frescor+mm30+pivo-inferior"   # marcador de versão (aparece no log)
+__build__ = "2026-08-26-lowzone3+maxsep45+cuphandle-ON"   # marcador de versão (aparece no log)
 
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
@@ -51,6 +51,7 @@ PIVOT_STR = "Pivô de alta"
 DOUBLE_BOTTOM_STR = "Fundo duplo"
 TRIPLE_BOTTOM_STR = "Fundo triplo"
 BULL_FLAG_STR = "Bandeira de alta"
+CUP_HANDLE_STR = "Xícara com alça"
 
 
 @dataclass
@@ -205,15 +206,15 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
                          min_sep: int = 10, max_sep: int = 45, neckline_min: float = 0.08,
                          drop_min: float = 0.20, order: int = 5,
                          max_bars_since: int = 20, max_ext: float = 0.10,
-                         debug: bool = False, ticker: str = ""):
+                         low_zone: float = 0.03, debug: bool = False, ticker: str = ""):
     """Fundo duplo (W) — padrão de REVERSÃO. Exige:
-      • tendência de BAIXA antes do padrão (is_uptrend do trecho anterior aos fundos) e
-        queda ≥ drop_min de um topo prévio até os fundos;
-      • dois fundos alinhados (≤ tol entre eles) e separados por ≥ min_sep pregões;
+      • tendência de BAIXA antes do padrão e queda ≥ drop_min de um topo prévio até os fundos;
+      • dois fundos alinhados (≤ tol entre eles) e separados entre min_sep e max_sep pregões;
+      • AMBOS os fundos na PARTE BAIXA do período (≤ low_zone acima da mínima da janela) — assim
+        os dois são o "fundo" de verdade, e não um vale na descida casado com o fundo real;
       • pico intermediário (pescoço) ≥ neckline_min acima dos fundos;
-      • CONFIRMA quando o preço rompe o pescoço — mas SÓ se o rompimento for RECENTE
-        (≤ max_bars_since pregões) e o preço não estiver ESTICADO (≤ max_ext acima do pescoço),
-        para não sinalizar um fundo duplo antigo cujo movimento já aconteceu."""
+      • CONFIRMA no rompimento do pescoço, se RECENTE (≤ max_bars_since) e não ESTICADO
+        (≤ max_ext acima do pescoço)."""
     close = df["Close"].iloc[-lookback:]
     if len(close) < 40:
         return None
@@ -222,6 +223,8 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
     if len(mins) < 2:
         return None
     cur = float(close.iloc[-1])
+    lo_janela = float(close.min())                       # mínima do período
+    teto_zona = lo_janela * (1 + low_zone)               # topo da "zona de fundo"
 
     def _dbg(msg):
         if debug:
@@ -229,7 +232,8 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
 
     if debug:
         _dbg(f"{len(mins)} mínimos locais em R$: " +
-             ", ".join(f"{float(close.iloc[i]):.2f}(idx{i})" for i in mins))
+             ", ".join(f"{float(close.iloc[i]):.2f}(idx{i})" for i in mins) +
+             f" | zona de fundo ≤ R${teto_zona:.2f} (mín R${lo_janela:.2f} +{low_zone*100:.0f}%)")
 
     for b in range(len(mins) - 1, 0, -1):
         for a in range(b - 1, -1, -1):
@@ -241,6 +245,11 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
                 continue
             p1, p2 = float(close.iloc[i1]), float(close.iloc[i2])
             if abs(p1 - p2) / min(p1, p2) > tol:          # fundos alinhados (≤2%)
+                continue
+            if p1 > teto_zona or p2 > teto_zona:          # algum vale NÃO está na parte baixa
+                if debug:
+                    _dbg(f"par R${p1:.2f}/R${p2:.2f}: fora da zona de fundo "
+                         f"(> R${teto_zona:.2f}) — um vale está na descida, não é W")
                 continue
             peak = float(close.iloc[i1:i2 + 1].max())
             base = min(p1, p2)
@@ -275,7 +284,8 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
 def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.02,
                          min_sep: int = 8, max_sep: int = 45, neckline_min: float = 0.08,
                          drop_min: float = 0.20, order: int = 5,
-                         max_bars_since: int = 20, max_ext: float = 0.10):
+                         max_bars_since: int = 20, max_ext: float = 0.10,
+                         low_zone: float = 0.15):
     """Fundo triplo — reversão. Três fundos alinhados (≤tol) com picos entre eles, após
     tendência de baixa + queda ≥drop_min; CONFIRMA no rompimento da resistência — só se o
     rompimento for RECENTE (≤max_bars_since) e o preço não estiver ESTICADO (≤max_ext).
@@ -296,6 +306,8 @@ def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.02,
     ps = [float(close.iloc[i]) for i in (i1, i2, i3)]
     base = min(ps)
     if (max(ps) - base) / base > tol:                     # três fundos alinhados (≤2%)
+        return None
+    if max(ps) > float(close.min()) * (1 + low_zone):     # algum vale fora da zona de fundo
         return None
     resist = float(close.iloc[i1:i3 + 1].max())
     if resist / base - 1 < neckline_min:
@@ -381,6 +393,78 @@ def detect_bull_flag(df, pole_win: int = 20, pole_min: float = 0.12,
     return None
 
 
+def detect_cup_handle(df, cup_min: int = 20, cup_max: int = 90, handle_max: int = 20,
+                      rim_tol: float = 0.06, depth_min: float = 0.10, depth_max: float = 0.45,
+                      handle_retrace_max: float = 0.45, max_ext: float = 0.05,
+                      round_min: float = 0.55, debug: bool = False, ticker: str = ""):
+    """Xícara com alça (cup and handle) — CONTINUAÇÃO de alta. Estrutura:
+      • duas BORDAS em nível parecido (≤ rim_tol) separadas por cup_min..cup_max pregões;
+      • um FUNDO arredondado entre elas (profundidade entre depth_min e depth_max da borda) e
+        formato de 'U' (não 'V'): o fundo fica na metade inferior por vários pregões (round_min);
+      • uma ALÇA curta (≤ handle_max pregões) logo após a 2ª borda: recuo raso (≤ handle_retrace_max
+        da profundidade da xícara);
+      • CONFIRMA quando o preço rompe a borda, sem estar esticado (≤ max_ext acima da borda).
+    Diferente do fundo duplo (reversão), aqui as bordas ficam no ALTO e o padrão aparece dentro
+    de uma tendência de alta."""
+    close = df["Close"]
+    n = cup_max + handle_max + 5
+    if len(close) < cup_min + 8:
+        return None
+    seg = close.iloc[-min(len(close), n):]
+    cur = float(seg.iloc[-1])
+
+    def _dbg(m):
+        if debug:
+            print(f"[padrao-debug {ticker}] (cup) {m}")
+
+    # a alça é o trecho final; a borda direita é o topo local antes da alça
+    for handle_len in range(3, handle_max + 1):
+        if len(seg) < cup_min + handle_len + 2:
+            break
+        cup = seg.iloc[:-handle_len]
+        handle = seg.iloc[-handle_len:]
+        rim_r_idx = int(np.argmax(cup.values))            # borda direita = topo da xícara
+        rim_r = float(cup.iloc[rim_r_idx])
+        # borda esquerda: topo à esquerda do fundo, em nível parecido com a direita
+        fundo_idx = int(np.argmin(cup.values))
+        if fundo_idx <= 2 or fundo_idx >= len(cup) - 3:
+            continue
+        left = cup.iloc[:fundo_idx]
+        rim_l = float(left.max())
+        if rim_l <= 0:
+            continue
+        if abs(rim_r - rim_l) / rim_l > rim_tol:          # bordas em nível parecido
+            continue
+        rim = (rim_r + rim_l) / 2.0
+        fundo = float(cup.min())
+        depth = (rim - fundo) / rim
+        if not (depth_min <= depth <= depth_max):         # profundidade típica de xícara
+            continue
+        largura = rim_r_idx - fundo_idx
+        if not (cup_min <= (len(cup) - 1) <= cup_max):
+            continue
+        # formato em U: boa parte da xícara na metade INFERIOR (arredondado, não V)
+        meia = rim - depth * rim * 0.5
+        frac_baixo = float((cup.values <= meia).mean())
+        if frac_baixo < round_min * 0.5:                  # muito pouco tempo embaixo -> V
+            _dbg(f"fundo pouco arredondado (só {frac_baixo*100:.0f}% do tempo na metade baixa)")
+            continue
+        # alça: recuo raso a partir da borda direita
+        h_low = float(handle.min())
+        h_retr = (rim_r - h_low) / (rim - fundo) if (rim - fundo) > 0 else 1.0
+        if h_retr > handle_retrace_max:                   # alça funda demais
+            continue
+        prev = float(seg.iloc[-2])
+        rompeu = cur >= rim and cur > prev
+        nao_esticado = cur <= rim * (1 + max_ext)
+        _dbg(f"borda≈R${rim:.2f} fundo R${fundo:.2f} prof {depth*100:.0f}% "
+             f"alça {handle_len}d recuo {h_retr*100:.0f}% | rompeu={rompeu} esticado_ok={nao_esticado}")
+        if rompeu and nao_esticado:
+            return {"borda": round(rim, 2), "fundo": round(fundo, 2),
+                    "profundidade": depth * 100.0, "alca_dias": handle_len}
+    return None
+
+
 # ------------------ API pública ------------------
 def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     breakout_consol_pct: float = 10.0,   # consolidação mais estreita (era 15)
@@ -398,6 +482,7 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     flag_min_retrace: float = 0.05,
                     trend_ma_long: int = 30,
                     pattern_max_sep: int = 45,
+                    pattern_low_zone: float = 0.03,
                     detect_patterns: bool = True,
                     **_ignored) -> BreakoutResult:
     """Rompimento/pivô com filtros de assertividade sobre o algoritmo original.
@@ -482,13 +567,19 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
         _pdbg = os.getenv("PATTERN_DEBUG", "").upper() == str(ticker or "").upper() \
             and bool(os.getenv("PATTERN_DEBUG"))
         db = detect_double_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep,
+                                  low_zone=pattern_low_zone,
                                   debug=_pdbg, ticker=ticker)
         tb = detect_triple_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep)
+        ch = detect_cup_handle(df, max_ext=flag_max_ext, debug=_pdbg, ticker=ticker)
         bf = detect_bull_flag(df, max_ext=flag_max_ext, flag_min=flag_min_dias,
                               pole_min=flag_pole_min, flag_min_retrace=flag_min_retrace)
         if tb:
             res.signal, res.strategy = True, TRIPLE_BOTTOM_STR
             res.note = f"Fundo triplo — rompeu pescoço ~R${tb['neckline']:.2f} (candidato)"
+        elif ch:
+            res.signal, res.strategy = True, CUP_HANDLE_STR
+            res.note = (f"Xícara com alça — borda ~R${ch['borda']:.2f}, fundo R${ch['fundo']:.2f} "
+                        f"(prof. {ch['profundidade']:.0f}%), alça {ch['alca_dias']}d (candidato)")
         elif db:
             res.signal, res.strategy = True, DOUBLE_BOTTOM_STR
             res.note = f"Fundo duplo — rompeu pescoço ~R${db['neckline']:.2f} (candidato)"
