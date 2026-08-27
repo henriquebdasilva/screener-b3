@@ -41,7 +41,7 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
-__build__ = "2026-08-26-lowzone3+maxsep45+cuphandle-ON"   # marcador de versão (aparece no log)
+__build__ = "2026-08-26b-pivotfrac075+lowzone3+cuphandle"   # marcador de versão (aparece no log)
 
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
@@ -474,7 +474,7 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     pivot_consol_pct: float = 20.0,
                     breakout_max_ext: float = 0.04,
                     pivot_max_ext: float = 0.04,
-                    pivot_lower_frac: float = 0.5,
+                    pivot_lower_frac: float = 0.75,
                     pattern_max_ext: float = 0.10,
                     flag_max_ext: float = 0.04,
                     flag_min_dias: int = 7,
@@ -535,7 +535,7 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
     # ---- PIVÔ: recuo ao suporte que vira p/ cima DENTRO de tendência de alta ----
     #   • tendência de ALTA ESTRUTURAL (preço > MM200 e MM50 > MM200) — a consolidação achata a
     #     MM21, então a alta de fundo é medida pelas médias longas, não pelos últimos 7 dias;
-    #   • o fechamento deve estar na PARTE INFERIOR da consolidação (≤ pivot_lower_frac da faixa),
+    #   • o fechamento deve estar até pivot_lower_frac da faixa (medida do fundo) — evita pivô
     #     ou seja, virando perto do suporte — não no meio/topo do range;
     #   • não pode estar esticado acima do topo da consolidação (pivot_max_ext).
     pivot_raw = (res.above_sma200 and res.sma50_gt_sma200) and is_pivoting(
