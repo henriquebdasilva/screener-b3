@@ -41,7 +41,7 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
-__build__ = "2026-08-27e-fundoduplo-virada"   # marcador de versão (aparece no log)
+__build__ = "2026-08-28-fundoduplo-calibrado-tol4-sep60-zone45"   # marcador de versão (aparece no log)
 
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
@@ -237,11 +237,11 @@ def _local_minima(series: pd.Series, order: int = 5) -> list:
     return out
 
 
-def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
-                         min_sep: int = 10, max_sep: int = 45, neckline_min: float = 0.08,
+def detect_double_bottom(df, lookback: int = 120, tol: float = 0.04,
+                         min_sep: int = 10, max_sep: int = 60, neckline_min: float = 0.08,
                          drop_min: float = 0.20, order: int = 5,
                          max_bars_since: int = 10, max_ext: float = 0.05, exigir_virada: bool = True,
-                         low_zone: float = 0.03, debug: bool = False, ticker: str = ""):
+                         low_zone: float = 0.045, debug: bool = False, ticker: str = ""):
     """Fundo duplo (W) — padrão de REVERSÃO. Exige:
       • tendência de BAIXA antes do padrão e queda ≥ drop_min de um topo prévio até os fundos;
       • dois fundos alinhados (≤ tol entre eles) e separados entre min_sep e max_sep pregões;
@@ -279,7 +279,10 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
                          f"({i2 - i1} pregões > {max_sep}) — descartado (não é um W)")
                 continue
             p1, p2 = float(close.iloc[i1]), float(close.iloc[i2])
-            if abs(p1 - p2) / min(p1, p2) > tol:          # fundos alinhados (≤2%)
+            if abs(p1 - p2) / min(p1, p2) > tol:          # fundos alinhados (≤ tol)
+                if debug:
+                    _dbg(f"par idx{i1}/idx{i2} R${p1:.2f}/R${p2:.2f}: desalinhados "
+                         f"({abs(p1-p2)/min(p1,p2)*100:.1f}% > {tol*100:.0f}%) — descartado")
                 continue
             if p1 > teto_zona or p2 > teto_zona:          # algum vale NÃO está na parte baixa
                 if debug:
@@ -326,8 +329,8 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.02,
     return None
 
 
-def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.02,
-                         min_sep: int = 8, max_sep: int = 45, neckline_min: float = 0.08,
+def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.04,
+                         min_sep: int = 8, max_sep: int = 60, neckline_min: float = 0.08,
                          drop_min: float = 0.20, order: int = 5,
                          max_bars_since: int = 10, max_ext: float = 0.05,
                          low_zone: float = 0.15):
@@ -530,8 +533,8 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                     flag_pole_min: float = 0.12,
                     flag_min_retrace: float = 0.05,
                     trend_ma_long: int = 30,
-                    pattern_max_sep: int = 45,
-                    pattern_low_zone: float = 0.03,
+                    pattern_max_sep: int = 60,
+                    pattern_low_zone: float = 0.045,
                     pattern_exigir_virada: bool = True,
                     detect_patterns: bool = True,
                     **_ignored) -> BreakoutResult:
