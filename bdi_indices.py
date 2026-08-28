@@ -59,45 +59,128 @@ def _num_pct(s):
         return None
 
 
-def parse_ifix(texto: str) -> dict | None:
-    """Extrai o bloco IFIX de 'Evolução dos Índices' (fechamento + variações)."""
-    m = re.search(r"IFIX\s*\n?Comportamento no Dia.*?Fechamento\s+([\d.,]+)", texto, re.S)
-    if not m:
-        return None
-    fechamento = _num_pts(m.group(1))
-    out = {"fechamento": fechamento}
-    m2 = re.search(r"IFIX\s*\(%\)\s*Do dia\s+([\-\d.]+)%.*?No mês\s+([\-\d.]+)%"
-                   r".*?No ano\s+([\-\d.]+)%", texto, re.S)
-    if m2:
-        out["var_dia_pct"] = _num_pct(m2.group(1))
-        out["var_mes_pct"] = _num_pct(m2.group(2))
-        out["var_ano_pct"] = _num_pct(m2.group(3))
-    return out if fechamento is not None else None
+def _pdf_lines(fonte):
+    """Reconstrói as linhas do PDF por coordenadas (x,y), como em posicoes.py/opcoes.py — o
+    texto corrido (get_text() simples) intercala colunas lado a lado (ex.: os 3 painéis
+    'Comportamento no Dia' da mesma linha), o que quebra regex sobre texto puro."""
+    import pymupdf
+    from collections import defaultdict
+    doc = pymupdf.open(stream=fonte, filetype="pdf") if isinstance(fonte, (bytes, bytearray)) \
+        else pymupdf.open(fonte)
+    linhas = []                      # lista de (pagina, y, [(x, texto), ...])
+    for pi, page in enumerate(doc):
+        L = defaultdict(list)
+        for w in page.get_text("words"):                 # (x0,y0,x1,y1,texto,...)
+            L[round(w[1] / 2) * 2].append((w[0], w[4]))
+        for y in sorted(L):
+            linhas.append((pi, y, [t for _, t in sorted(L[y])]))
+    return linhas
 
 
-def parse_fluxo_acumulado(texto: str) -> dict | None:
-    """Extrai 'Participação dos Investidores' (compras/vendas ACUMULADAS do mês) do
-    Investidor Estrangeiro. Também tenta capturar a data-base ('até o dia DD/MM/AAAA')."""
-    m = re.search(r"Investidor Estrangeiro\s+([\d.,]+)\s+([\d,]+)\s+([\d.,]+)\s+([\d,]+)",
-                  texto)
-    if not m:
-        return None
-    compras, vendas = _num_br(m.group(1)), _num_br(m.group(3))
-    if compras is None or vendas is None:
-        return None
-    dm = re.search(r"até o dia (\d{2}/\d{2}/\d{4})", texto)
-    data_base = None
-    if dm:
+def _achar_bloco_indice(linhas, nome_indice: str, largura_col: float = 200):
+    """Localiza o bloco 'Comportamento no Dia' de um índice específico (ex.: 'IFIX') pela
+    coluna (x) do título, e devolve as linhas seguintes dentro da mesma faixa de x — evita
+    pegar o Fechamento/percentuais de um índice vizinho na mesma linha."""
+    import pymupdf
+    x_titulo = None
+    idx_titulo = None
+    for i, (pi, y, cells) in enumerate(linhas):
+        if cells and cells[0].strip() == nome_indice:
+            # confirma que é título de bloco (seguido de 'Comportamento' em poucas linhas)
+            seguinte = " ".join(c for _, _, cs in linhas[i:i + 3] for c in cs)
+            if "Comportamento" in seguinte or "Pontos" in seguinte:
+                idx_titulo = i
+                break
+    if idx_titulo is None:
+        return []
+    # x do título define a coluna; pega as próximas ~20 linhas cujo primeiro token começa
+    # perto dessa coluna (tolerância generosa, já que colunas têm ~200-250pt de largura)
+    return linhas[idx_titulo:idx_titulo + 25]
+
+
+def parse_ifix(texto=None, linhas=None) -> dict | None:
+    """Extrai o bloco IFIX ('Comportamento no Dia' + 'Evolução dos Fechamentos') por
+    coordenadas. Aceita `linhas` (de _pdf_lines) OU, em fallback, `texto` corrido (menos
+    confiável em layout de 3 colunas)."""
+    if linhas:
+        bloco = _achar_bloco_indice(linhas, "IFIX")
+        if not bloco:
+            return None
+        flat = [c for _, _, cells in bloco for c in cells]
+        out = {}
+        if "Fechamento" in flat:
+            i = flat.index("Fechamento")
+            out["fechamento"] = _num_pts(flat[i + 1]) if i + 1 < len(flat) else None
+        # percentuais: procura 'Do', 'dia', '%', ... ancorado por 'No' 'mês' e 'No' 'ano'
         try:
-            data_base = dt.datetime.strptime(dm.group(1), "%d/%m/%Y").date()
-        except Exception:
+            j = flat.index("Do")
+            # padrão: Do dia X% Ontem X% Na semana X% Em uma semana X% No mês X% ... No ano X%
+            def pct_apos(chave_seq):
+                for k in range(len(flat) - len(chave_seq)):
+                    if flat[k:k + len(chave_seq)] == chave_seq:
+                        val = flat[k + len(chave_seq)]
+                        return _num_pct(val.replace("%", ""))
+                return None
+            out["var_dia_pct"] = pct_apos(["Do", "dia"])
+            out["var_mes_pct"] = pct_apos(["No", "mês"])
+            out["var_ano_pct"] = pct_apos(["No", "ano"])
+        except ValueError:
             pass
-    return {"compras_acum_mes": compras, "vendas_acum_mes": vendas,
-            "saldo_acum_mes": compras - vendas, "data_base": data_base}
+        return out if out.get("fechamento") is not None else None
+    if texto:
+        m = re.search(r"IFIX\s*\n?Comportamento no Dia.*?Fechamento\s+([\d.,]+)", texto, re.S)
+        if not m:
+            return None
+        out = {"fechamento": _num_pts(m.group(1))}
+        m2 = re.search(r"IFIX\s*\(%\)\s*Do dia\s+([\-\d.]+)%.*?No mês\s+([\-\d.]+)%"
+                       r".*?No ano\s+([\-\d.]+)%", texto, re.S)
+        if m2:
+            out["var_dia_pct"] = _num_pct(m2.group(1))
+            out["var_mes_pct"] = _num_pct(m2.group(2))
+            out["var_ano_pct"] = _num_pct(m2.group(3))
+        return out if out["fechamento"] is not None else None
+    return None
+
+
+def parse_fluxo_acumulado(texto=None, linhas=None) -> dict | None:
+    """Extrai 'Participação dos Investidores' (compras/vendas ACUMULADAS do mês) do
+    Investidor Estrangeiro. Aceita `linhas` (coordenadas) ou `texto` corrido."""
+    if linhas:
+        for _, _, cells in linhas:
+            if len(cells) >= 2 and cells[0] == "Investidor" and cells[1] == "Estrangeiro":
+                nums = [_num_br(c) for c in cells[2:] if _num_br(c) is not None]
+                if len(nums) >= 2:
+                    compras, vendas = nums[0], nums[1] if len(nums) < 4 else nums[2]
+                    # layout: Compras | Participação% | Vendas | Participação%
+                    if len(nums) >= 3:
+                        compras, vendas = nums[0], nums[2]
+                    return {"compras_acum_mes": compras, "vendas_acum_mes": vendas,
+                            "saldo_acum_mes": compras - vendas, "data_base": None}
+        return None
+    if texto:
+        m = re.search(r"Investidor Estrangeiro\s+([\d.,]+)\s+([\d,]+)\s+([\d.,]+)\s+([\d,]+)",
+                      texto)
+        if not m:
+            return None
+        compras, vendas = _num_br(m.group(1)), _num_br(m.group(3))
+        if compras is None or vendas is None:
+            return None
+        dm = re.search(r"até o dia (\d{2}/\d{2}/\d{4})", texto)
+        data_base = None
+        if dm:
+            try:
+                data_base = dt.datetime.strptime(dm.group(1), "%d/%m/%Y").date()
+            except Exception:
+                pass
+        return {"compras_acum_mes": compras, "vendas_acum_mes": vendas,
+                "saldo_acum_mes": compras - vendas, "data_base": data_base}
+    return None
 
 
 def _fetch_bdi02(dias_tentativa: int = 6):
-    """Baixa o BDI_02 mais recente disponível. Retorna (texto, data) ou (None, None)."""
+    """Baixa o BDI_02 mais recente disponível. Retorna (bytes_pdf, texto, data) ou
+    (None, None, None). Devolve os bytes para permitir tanto o parser por coordenadas quanto
+    o de texto corrido (fallback)."""
     for i in range(dias_tentativa):
         d = dt.date.today() - dt.timedelta(days=i)
         url = _bdi_pdf_url(d)
@@ -107,23 +190,45 @@ def _fetch_bdi02(dias_tentativa: int = 6):
                 raw = r.read()
             if raw[:4] != b"%PDF":
                 continue
-            return _pdf_text(bytes(raw)), d
+            return bytes(raw), _pdf_text(bytes(raw)), d
         except Exception:
             continue
-    return None, None
+    return None, None, None
+
+
+def _debug_snippet(texto: str, chave: str, tam: int = 400) -> str:
+    """Trecho do texto ao redor da 1ª ocorrência de `chave`, para diagnóstico em log."""
+    if not texto:
+        return "(sem texto extraído)"
+    i = texto.find(chave)
+    if i < 0:
+        return f"('{chave}' não aparece no texto extraído)"
+    return texto[max(0, i - 40):i + tam].replace("\n", " | ")
 
 
 def fetch_ifix() -> dict | None:
-    """IFIX (fechamento + variações) via BDI. None se indisponível — nunca inventa."""
+    """IFIX (fechamento + variações) via BDI. Tenta primeiro por COORDENADAS (robusto a
+    layout de colunas lado a lado), cai para texto corrido, depois desiste. None se
+    indisponível — nunca inventa. Ative BDI_DEBUG=1 para logar um trecho em caso de falha."""
     if os.getenv("BDI_INDICES", "1") == "0":
         return None
-    texto, d = _fetch_bdi02()
-    if not texto:
+    raw, texto, d = _fetch_bdi02()
+    if not raw:
         print("[bdi_indices] IFIX: não consegui baixar o BDI_02.")
         return None
-    ifix = parse_ifix(texto)
+    ifix = None
+    try:
+        ifix = parse_ifix(linhas=_pdf_lines(raw))
+    except Exception as e:
+        print(f"[bdi_indices] IFIX: parser por coordenadas falhou ({e}); tentando texto corrido.")
     if not ifix:
-        print("[bdi_indices] IFIX: layout não reconhecido no BDI_02.")
+        ifix = parse_ifix(texto=texto)
+    if not ifix:
+        print("[bdi_indices] IFIX: layout não reconhecido no BDI_02 (nem por coordenadas, "
+              "nem por texto).")
+        if os.getenv("BDI_DEBUG", "0") == "1":
+            print("[bdi_indices][debug] trecho ao redor de 'IFIX': "
+                  + _debug_snippet(texto, "IFIX"))
         return None
     ifix["data"] = d
     print(f"[bdi_indices] IFIX {d}: {ifix['fechamento']:.0f} pts "
@@ -138,13 +243,23 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
     if os.getenv("BDI_INDICES", "1") == "0":
         return None
     cache_path = cache_path or os.getenv("FLUXO_CACHE_PATH", "reports/.fluxo_cache.json")
-    texto, d = _fetch_bdi02()
-    if not texto:
+    raw, texto, d = _fetch_bdi02()
+    if not raw:
         print("[bdi_indices] fluxo estrangeiro: não consegui baixar o BDI_02.")
         return None
-    acc = parse_fluxo_acumulado(texto)
+    acc = None
+    try:
+        acc = parse_fluxo_acumulado(linhas=_pdf_lines(raw))
+    except Exception as e:
+        print(f"[bdi_indices] fluxo estrangeiro: parser por coordenadas falhou ({e}); "
+              f"tentando texto corrido.")
+    if not acc:
+        acc = parse_fluxo_acumulado(texto=texto)
     if not acc:
         print("[bdi_indices] fluxo estrangeiro: layout não reconhecido no BDI_02.")
+        if os.getenv("BDI_DEBUG", "0") == "1":
+            print("[bdi_indices][debug] trecho ao redor de 'Investidor Estrangeiro': "
+                  + _debug_snippet(texto, "Investidor Estrangeiro"))
         return None
     data_ref = acc.get("data_base") or d
 
