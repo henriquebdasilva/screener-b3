@@ -78,9 +78,58 @@ tr:nth-child(even) td{background:#f3f4f6}
 .tag{display:inline-block;padding:2px 8px;border-radius:9999px;font-size:11px;font-weight:700}
 .romp{background:#dcfce7;color:#166534}.piv{background:#fef9c3;color:#854d0e}
 .nao{background:#e5e7eb;color:#4b5563}
+.pad{background:#dbeafe;color:#1e40af}
 .warn{color:#6b7280;font-size:12px;margin-top:16px}
 .empty{color:#6b7280;font-style:italic}
+/* ---- faixa de título de seção (barra colorida) ---- */
+.secbar{background:#1f3864;color:#fff;padding:7px 12px;font-size:14px;font-weight:bold;
+        margin:20px 0 0}
+.secbar .cnt{color:#c7d2fe;font-weight:normal;font-size:12px}
+.secsub{background:#eef2ff;color:#3730a3;font-size:11px;padding:5px 12px;margin:0 0 8px}
+/* ---- cartões de KPI (via tabela, compatível com xhtml2pdf) ---- */
+.kpi{width:100%;border-collapse:separate;border-spacing:6px 0;margin:2px 0 14px}
+.kpi td{border:none;padding:9px 10px;text-align:center;background:#f1f5f9}
+.kpi .lbl{font-size:10px;color:#475569;text-transform:uppercase}
+.kpi .val{font-size:17px;font-weight:bold;color:#0f172a}
+/* ---- escala de score (fundo colorido por faixa) ---- */
+.s5{background:#166534;color:#fff}.s4{background:#86efac;color:#14532d}
+.s3{background:#fef08a;color:#713f12}.s2{background:#fed7aa;color:#7c2d12}
+.s1{background:#fecaca;color:#7f1d1d}
+.scr{display:inline-block;min-width:26px;padding:2px 5px;border-radius:4px;
+     font-weight:bold;font-size:11px;text-align:center}
 """
+
+
+def _scr(v, casas: int = 0) -> str:
+    """Score 0-100 como badge colorido (verde escuro = ótimo ... vermelho = fraco)."""
+    try:
+        x = float(v)
+    except Exception:
+        return '<span class="mut">—</span>'
+    if math.isnan(x):
+        return '<span class="mut">—</span>'
+    cls = "s5" if x >= 80 else "s4" if x >= 65 else "s3" if x >= 50 else "s2" if x >= 35 else "s1"
+    return f'<span class="scr {cls}">{x:.{casas}f}</span>'
+
+
+def _kpi_bar(itens) -> str:
+    """Linha de cartões KPI (label + valor). `itens` = lista de (label, valor[, cor])."""
+    if not itens:
+        return ""
+    tds = []
+    for it in itens:
+        lbl, val = it[0], it[1]
+        cor = it[2] if len(it) > 2 else "#0f172a"
+        tds.append(f'<td><div class="lbl">{lbl}</div>'
+                   f'<div class="val" style="color:{cor}">{val}</div></td>')
+    return f'<table class="kpi"><tr>{"".join(tds)}</tr></table>'
+
+
+def _secbar(titulo: str, cnt: str = "", sub: str = "") -> str:
+    """Faixa colorida de título de seção (+ subtítulo opcional)."""
+    c = f' <span class="cnt">{cnt}</span>' if cnt else ""
+    s = f'<div class="secsub">{sub}</div>' if sub else ""
+    return f'<div class="secbar">{titulo}{c}</div>{s}'
 
 
 def _fmt_row(r) -> str:
@@ -118,9 +167,9 @@ def _fmt_row(r) -> str:
         pass
     return (
         f"<tr><td><b>{r.name}</b></td><td>{r.get('origem','')}</td>"
-        f"<td>{r.get('setor','')}</td><td>{num(r.get('investment'),0)}</td>"
-        f"<td>{num(r.get('quality'),0)}</td><td>{num(r.get('value'),0)}</td>"
-        f"<td>{num(r.get('safety'),0)}</td><td>{num(r.get('dividend'),0)}</td>"
+        f"<td>{r.get('setor','')}</td><td>{_scr(r.get('investment'))}</td>"
+        f"<td>{_scr(r.get('quality'))}</td><td>{_scr(r.get('value'))}</td>"
+        f"<td>{_scr(r.get('safety'))}</td><td>{_scr(r.get('dividend'))}</td>"
         f"<td>{cons_cell}</td>"
         f"<td>{crit}</td><td>{tag}</td><td>{r.get('trend','')}</td>"
         f"<td>{num(r.get('close'),2)}</td><td>{teto_cell}</td></tr>"
@@ -365,8 +414,8 @@ def _mood_block(mood: dict, opcoes: dict = None) -> str:
                  f'<span class="sub">Puts ÷ calls. &gt;1 = mais proteção/baixa; &lt;1 = mais '
                  f'aposta em alta. Volume = giro do dia; posições = open interest (contratos '
                  f'em aberto, mais estrutural).</span></p>')
-    return (f'<h2 style="{_H2}">Humor do mercado</h2>'
-            f'<p class="sub" style="margin:0 0 6px">Percentual dos papéis do universo '
+    return (_secbar("Humor do mercado")
+            + f'<p class="sub" style="margin:0 0 6px">Percentual dos papéis do universo '
             f'(BOVA11 + SMALL11) em alta/lateral/baixa pela média móvel de 21 pregões'
             f'{", com o Put/Call ratio por setor" if tem_pc else ""}.</p>'
             f'{termo}<table>{head}{"".join(rows)}</table>')
@@ -498,10 +547,29 @@ def _main_head() -> str:
 
 def _main_table(df: pd.DataFrame, title: str) -> str:
     if df is None or df.empty:
-        return f'<h2 style="{_H2}">{title}</h2><p class="empty">Nenhum papel neste grupo.</p>'
+        return _secbar(title) + '<p class="empty">Nenhum papel neste grupo.</p>'
     rows = "".join(_fmt_row(r) for _, r in df.iterrows())
-    return (f'<h2 style="{_H2}">{title} — {len(df)} papéis</h2>'
-            f'<table>{_main_head()}{rows}</table>')
+    # KPIs do grupo: nº de papéis, score médio, quantos com sinal gráfico, upside mediano
+    kpis = []
+    try:
+        kpis.append(("Papéis", f"{len(df)}"))
+        inv = pd.to_numeric(df.get("investment"), errors="coerce")
+        if inv.notna().any():
+            kpis.append(("Score médio", f"{inv.mean():.0f}"))
+        flag = df.get("oportunidade_grafica")
+        if flag is not None:
+            n_sig = int((flag.astype(str).str.strip().str.lower() != "não").sum())
+            kpis.append(("Com sinal gráfico", f"{n_sig}",
+                         "#16a34a" if n_sig else "#64748b"))
+        ups = pd.to_numeric(df.get("teto_upside_pct"), errors="coerce")
+        if ups.notna().any():
+            m = ups.median()
+            kpis.append(("Upside mediano", f"{m:+.0f}%",
+                         "#16a34a" if m > 0 else "#dc2626"))
+    except Exception:
+        pass
+    return (_secbar(title, f"— {len(df)} papéis") + _kpi_bar(kpis)
+            + f'<table>{_main_head()}{rows}</table>')
 
 
 def _group_block(df: pd.DataFrame, title: str, show_ind: bool = True,
@@ -525,14 +593,14 @@ def _group_block(df: pd.DataFrame, title: str, show_ind: bool = True,
 def _defensivas_section(df: pd.DataFrame, thr: float) -> str:
     title = f"Defensivas · não-cíclicas (ciclicidade ≤ {thr:.1f})"
     if df is None or df.empty:
-        return (f'<h2 style="{_H2}">{title}</h2>'
-                f'<p class="empty">Nenhuma selecionada nesse critério hoje.</p>')
+        return (_secbar(title)
+                + '<p class="empty">Nenhuma selecionada nesse critério hoje.</p>')
     sub = ('<p class="sub" style="margin:0 0 8px">Recorte das <b>blue chips</b> selecionadas '
            '(BOVA11) em setores menos sensíveis ao ciclo econômico. Small caps ficam fora desta '
            'seção. Indicadores e preços-teto destes papéis estão na seção BOVA11 acima.</p>')
     rows = "".join(_fmt_row(r) for _, r in df.iterrows())
-    return (f'<h2 style="{_H2}">{title} — {len(df)} papéis</h2>{sub}'
-            f'<table>{_main_head()}{rows}</table>')
+    return (_secbar(title, f"— {len(df)} papéis") + sub
+            + f'<table>{_main_head()}{rows}</table>')
 
 
 def _posicao_table(df: pd.DataFrame) -> str:
@@ -562,9 +630,9 @@ def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False,
                  show_agenda: bool = True, tese_max: int = 0,
                  show_teto: bool = True) -> str:
     if df is None or df.empty:
-        return (f'<h2 style="{_H2}">{title}</h2>'
-                f'<p class="empty">Nenhum papel — crie/edite o arquivo .txt correspondente.</p>')
-    parts = [f'<h2 style="{_H2}">{title} — {len(df)} papéis</h2>',
+        return (_secbar(title)
+                + '<p class="empty">Nenhum papel — crie/edite o arquivo .txt correspondente.</p>')
+    parts = [_secbar(title, f"— {len(df)} papéis"),
              f'<p class="sub" style="margin:0 0 8px">{sub}</p>']
     if posicao:
         parts.append(_posicao_table(df))
@@ -603,7 +671,25 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
             painel = render_panel(macro, regime or {})
         except Exception:
             painel = ""
-    topo = painel + _market_block(market) + _mood_block(mood, opcoes)
+    resumo_kpi = ""
+    try:
+        n_tot = len(selecionados) if selecionados is not None else 0
+        flag = selecionados.get("oportunidade_grafica") if selecionados is not None else None
+        n_sig = (int((flag.astype(str).str.strip().str.lower() != "não").sum())
+                 if flag is not None else 0)
+        ups = (pd.to_numeric(selecionados.get("teto_upside_pct"), errors="coerce")
+               if selecionados is not None else None)
+        ups_txt = f"{ups.median():+.0f}%" if (ups is not None and ups.notna().any()) else "—"
+        ups_cor = ("#16a34a" if (ups is not None and ups.notna().any() and ups.median() > 0)
+                   else "#dc2626")
+        resumo_kpi = _kpi_bar([
+            ("Selecionados", str(n_tot)),
+            ("Com sinal gráfico", str(n_sig), "#16a34a" if n_sig else "#64748b"),
+            ("Upside mediano", ups_txt, ups_cor),
+        ])
+    except Exception:
+        resumo_kpi = ""
+    topo = resumo_kpi + painel + _market_block(market) + _mood_block(mood, opcoes)
     def _suf(g):
         p = group_pct.get(g) if isinstance(group_pct, dict) else group_pct
         return f" ({p}% de maior score)" if p else ""
