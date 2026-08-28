@@ -163,9 +163,10 @@ def _ratio(call_oi: float, put_oi: float) -> dict:
             "pct_put": (put_oi / tot * 100) if tot > 0 else math.nan}
 
 
-def oi_ratios(posicoes: list, ticker_setor: dict = None) -> dict:
-    """Razão de open interest Put/Call por ativo, setor e mercado. Também guarda, por ativo, a
-    série de MAIOR open interest (code, tipo, oi) para destaque no relatório."""
+def oi_ratios(posicoes: list, ticker_setor: dict = None, ticker_grupo: dict = None) -> dict:
+    """Razão de open interest Put/Call por ativo, setor, GRUPO de índice (BOVA11/SMALL11) e
+    mercado. Também guarda, por ativo, a série de MAIOR open interest (code, tipo, oi) para
+    destaque no relatório."""
     por_base = {}
     maior_oi = {}                    # raiz -> série com maior OI
     for p in posicoes:
@@ -178,23 +179,26 @@ def oi_ratios(posicoes: list, ticker_setor: dict = None) -> dict:
     tc = sum(v[0] for v in por_base.values())
     tp = sum(v[1] for v in por_base.values())
     mercado = _ratio(tc, tp)
-    por_setor = {}
-    if ticker_setor:
-        raiz_setor = {}
-        for tk, s in ticker_setor.items():
-            if s:
-                raiz_setor.setdefault(_raiz(tk), s)
+
+    def _agrupa(mapa_tk_grupo):
+        raiz_grp = {}
+        for tk, g in (mapa_tk_grupo or {}).items():
+            if g:
+                raiz_grp.setdefault(_raiz(tk), g)
         acc = {}
         for r, (c, pp) in por_base.items():
-            s = raiz_setor.get(r)
-            if not s:
+            g = raiz_grp.get(r)
+            if not g:
                 continue
-            a = acc.setdefault(s, [0.0, 0.0])
+            a = acc.setdefault(g, [0.0, 0.0])
             a[0] += c
             a[1] += pp
-        por_setor = {s: _ratio(c, pp) for s, (c, pp) in acc.items()}
+        return {g: _ratio(c, pp) for g, (c, pp) in acc.items()}
+
+    por_setor = _agrupa(ticker_setor)
+    por_grupo = _agrupa(ticker_grupo)
     return {"mercado": mercado, "por_setor": por_setor, "por_ativo": por_ativo,
-            "maior_oi": maior_oi}
+            "por_grupo": por_grupo, "maior_oi": maior_oi}
 
 
 def _parse_oi_json(texto: str, underlying_roots=None):
@@ -374,7 +378,7 @@ def _bdi_pdf_url(dataobj, capitulo="03-4"):
             f"BDI_{capitulo}_{d.strftime('%Y%m%d')}.pdf")
 
 
-def fetch_open_interest(ticker_setor: dict = None) -> dict | None:
+def fetch_open_interest(ticker_setor: dict = None, ticker_grupo: dict = None) -> dict | None:
     """Baixa o PDF 'Derivativos de bolsa' (BDI_03-4) da B3 e calcula o open interest Put/Call
     das opções sobre ações. Tenta a data de hoje e volta pregões. URL/capítulo configuráveis
     por env (OI_URL força uma URL; OI_CAPITULO troca o capítulo). Desligue com OI=0. None em falha.
@@ -420,7 +424,7 @@ def fetch_open_interest(ticker_setor: dict = None) -> dict | None:
         if not posicoes:
             print(f"[oi] {url.split('/')[-1]} sem séries reconhecidas.")
             continue
-        r = oi_ratios(posicoes, ticker_setor)
+        r = oi_ratios(posicoes, ticker_setor, ticker_grupo=ticker_grupo)
         r["n_series"] = len(posicoes)
         r["data"] = d
         pc = r["mercado"]["oi_ratio"]

@@ -132,6 +132,18 @@ def _secbar(titulo: str, cnt: str = "", sub: str = "") -> str:
     return f'<div class="secbar">{titulo}{c}</div>{s}'
 
 
+def _trend_cell(trend) -> str:
+    """Tendência (Em Alta/Lateral/Em Baixa) com cor: verde/cinza/vermelho."""
+    t = str(trend or "").strip()
+    if t == "Em Alta":
+        return f'<span style="color:#16a34a;font-weight:bold">▲ {t}</span>'
+    if t == "Em Baixa":
+        return f'<span style="color:#dc2626;font-weight:bold">▼ {t}</span>'
+    if t == "Lateral":
+        return f'<span style="color:#6b7280">▬ {t}</span>'
+    return t or '<span class="mut">—</span>'
+
+
 def _fmt_row(r) -> str:
     flag = str(r.get("oportunidade_grafica", "") or "")
     if not flag:  # compat: deriva de strategy/breakout se a flag não veio
@@ -171,7 +183,7 @@ def _fmt_row(r) -> str:
         f"<td>{_scr(r.get('quality'))}</td><td>{_scr(r.get('value'))}</td>"
         f"<td>{_scr(r.get('safety'))}</td><td>{_scr(r.get('dividend'))}</td>"
         f"<td>{cons_cell}</td>"
-        f"<td>{crit}</td><td>{tag}</td><td>{r.get('trend','')}</td>"
+        f"<td>{crit}</td><td>{tag}</td><td>{_trend_cell(r.get('trend',''))}</td>"
         f"<td>{num(r.get('close'),2)}</td><td>{teto_cell}</td></tr>"
     )
 
@@ -272,7 +284,7 @@ def _ret_str(v):
     return "n/d" if (v is None or (isinstance(v, float) and math.isnan(v))) else f"{v:+.1f}%"
 
 
-def _market_block(m: dict) -> str:
+def _market_block(m: dict, macro: dict = None, opcoes: dict = None) -> str:
     if not m:
         return ""
     rows = [f"<tr><td><b>Selic</b></td><td>{m.get('selic', float('nan')):.2f}% a.a.</td>"
@@ -281,10 +293,46 @@ def _market_block(m: dict) -> str:
         ytd, mtd = (tup if tup else (math.nan, math.nan))
         rows.append(f"<tr><td><b>{name}</b></td><td>{_ret_str(ytd)}</td>"
                     f"<td>{_ret_str(mtd)}</td></tr>")
-    rows.append('<tr><td><b>Fluxo estrangeiro</b></td>'
-                '<td colspan="2">n/d — sem fonte automática (B3)</td></tr>')
-    rows.append('<tr><td><b>Opções mais negociadas</b></td>'
-                '<td colspan="2">n/d — sem fonte automática (B3)</td></tr>')
+
+    ifix = (macro or {}).get("ifix")
+    if ifix and ifix.get("fechamento") is not None:
+        rows.append(f"<tr><td><b>IFIX</b></td>"
+                    f"<td>{_ret_str(ifix.get('var_ano_pct'))}</td>"
+                    f"<td>{_ret_str(ifix.get('var_mes_pct'))}</td></tr>")
+    else:
+        rows.append('<tr><td><b>IFIX</b></td><td colspan="2">n/d</td></tr>')
+
+    fx = (macro or {}).get("fluxo_estrangeiro")
+    if fx and fx.get("dia") is not None:
+        cor = "#16a34a" if fx["dia"] >= 0 else "#dc2626"
+        rows.append(f'<tr><td><b>Fluxo estrangeiro</b></td>'
+                    f'<td colspan="2"><span style="color:{cor}">'
+                    f'R$ {fx["dia"]:+,.0f} mi</span> no dia '
+                    f'<span class="sub">(fonte: BDI/B3)</span></td></tr>')
+    elif fx and fx.get("acum_mes") is not None:
+        cor = "#16a34a" if fx["acum_mes"] >= 0 else "#dc2626"
+        rows.append(f'<tr><td><b>Fluxo estrangeiro</b></td>'
+                    f'<td colspan="2">acum. mês <span style="color:{cor}">'
+                    f'R$ {fx["acum_mes"]:+,.0f} mi</span> '
+                    f'<span class="sub">(valor do dia disponível amanhã)</span></td></tr>')
+    else:
+        rows.append('<tr><td><b>Fluxo estrangeiro</b></td>'
+                    '<td colspan="2">n/d — BDI indisponível hoje</td></tr>')
+
+    top = (opcoes or {}).get("top_negociadas") or []
+    if top:
+        itens = []
+        for o in top[:5]:
+            tp = "CALL" if o["tipo"] == "C" else "PUT"
+            cor = "#16a34a" if o["tipo"] == "C" else "#dc2626"
+            vol = f"{o['volume']/1e6:.1f}M" if o["volume"] >= 1e6 else f"{o['volume']/1e3:.0f}k"
+            itens.append(f'{o["base"]} <span style="color:{cor}">{tp}</span> '
+                        f'{_fmt_strike(o.get("strike"))} <span class="sub">({vol})</span>')
+        rows.append(f'<tr><td><b>Opções mais negociadas</b></td>'
+                    f'<td colspan="2">{" · ".join(itens)}</td></tr>')
+    else:
+        rows.append('<tr><td><b>Opções mais negociadas</b></td>'
+                    '<td colspan="2">n/d — COTAHIST indisponível hoje</td></tr>')
     head = '<tr><th>Indicador</th><th>No ano</th><th>No mês</th></tr>'
     return (f'<h2 style="{_H2}">Resumo de mercado</h2>'
             f'<table>{head}{"".join(rows)}</table>')
@@ -295,20 +343,28 @@ def _breadth_bar(b: dict) -> str:
     def seg(pct, cor, txt_cor):
         if not pct:
             return ""
-        return (f'<td style="width:{pct}%;background:{cor};color:{txt_cor};font-size:9px;'
-                f'text-align:center;padding:1px 0">{pct}%</td>')
-    cells = (seg(b["alta"], "#16a34a", "#fff") + seg(b["lateral"], "#e2e8f0", "#334155")
+        return (f'<td style="width:{pct}%;background:{cor};color:{txt_cor};font-size:10px;'
+                f'font-weight:bold;text-align:center;padding:3px 0">{pct}%</td>')
+    cells = (seg(b["alta"], "#16a34a", "#fff") + seg(b["lateral"], "#cbd5e1", "#334155")
              + seg(b["baixa"], "#dc2626", "#fff"))
-    return (f'<table style="width:120px;border-collapse:collapse;table-layout:fixed">'
-            f'<tr>{cells}</tr></table>')
+    return (f'<table style="width:150px;border-collapse:collapse;table-layout:fixed;'
+            f'border-radius:3px;overflow:hidden"><tr>{cells}</tr></table>')
 
 
 def _pc_cell(pc) -> str:
-    """Formata o Put/Call ratio com cor (>1.2 baixista/vermelho, <0.8 altista/verde)."""
+    """Put/Call ratio como badge colorido (vermelho ≥1.2 baixista, verde ≤0.8 altista,
+    cinza neutro) — mesmo tratamento visual dos scores, para destacar de relance."""
     if pc is None or (isinstance(pc, float) and math.isnan(pc)):
-        return '<span class="sub">n/d</span>'
-    cor = "#dc2626" if pc >= 1.2 else ("#16a34a" if pc <= 0.8 else "#334155")
-    return f'<span style="color:{cor}">{pc:.2f}</span>'
+        return '<span class="mut">n/d</span>'
+    if pc >= 1.2:
+        bg, fg = "#fecaca", "#7f1d1d"
+    elif pc <= 0.8:
+        bg, fg = "#bbf7d0", "#14532d"
+    else:
+        bg, fg = "#e2e8f0", "#334155"
+    return (f'<span style="display:inline-block;min-width:34px;padding:2px 5px;'
+            f'border-radius:4px;background:{bg};color:{fg};font-weight:bold;'
+            f'font-size:11px;text-align:center">{pc:.2f}</span>')
 
 
 def _fmt_strike(s):
@@ -369,23 +425,28 @@ def _mood_block(mood: dict, opcoes: dict = None) -> str:
     if not mood or (not mood.get("indices") and not mood.get("setores")):
         return ""
     por_setor = (opcoes or {}).get("por_setor") or {}
+    por_grupo = (opcoes or {}).get("por_grupo") or {}      # BOVA11/SMALL11 (média por índice)
     oi = (opcoes or {}).get("oi") or {}
     oi_setor = oi.get("por_setor") or {}
-    tem_pc = bool(por_setor)
-    tem_oi = bool(oi_setor)
+    oi_grupo = oi.get("por_grupo") or {}
+    tem_pc = bool(por_setor or por_grupo)
+    tem_oi = bool(oi_setor or oi_grupo)
 
     def linha(nome, b, pc=None, oi_pc=None, bold=False):
         rot = f"<b>{nome}</b>" if bold else nome
+        bg = ' style="background:#eef2ff"' if bold else ""
         txt = (f'{b["alta"]}% alta · {b["lateral"]}% lat · {b["baixa"]}% baixa '
                f'<span class="sub">(n={b["n"]})</span>')
         pc_td = f"<td class='r'>{_pc_cell(pc)}</td>" if tem_pc else ""
         oi_td = f"<td class='r'>{_pc_cell(oi_pc)}</td>" if tem_oi else ""
-        return (f"<tr><td>{rot}</td><td>{_breadth_bar(b)}</td>"
+        return (f"<tr{bg}><td>{rot}</td><td>{_breadth_bar(b)}</td>"
                 f"<td>{txt}</td>{pc_td}{oi_td}</tr>")
 
     rows = []
     for k, b in (mood.get("indices") or {}).items():
-        rows.append(linha(k, b, bold=True))
+        pc = (por_grupo.get(k) or {}).get("pc_ratio")
+        oi_pc = (oi_grupo.get(k) or {}).get("oi_ratio")
+        rows.append(linha(k, b, pc=pc, oi_pc=oi_pc, bold=True))
     for setor, b in sorted((mood.get("setores") or {}).items(),
                            key=lambda kv: -kv[1]["alta"]):
         pc = (por_setor.get(setor) or {}).get("pc_ratio")
@@ -394,8 +455,8 @@ def _mood_block(mood: dict, opcoes: dict = None) -> str:
 
     pc_head = "<th class='r'>P/C vol.</th>" if tem_pc else ""
     oi_head = "<th class='r'>P/C posições</th>" if tem_oi else ""
-    head = (f'<tr><th>Grupo / Setor</th><th>Tendência</th>'
-            f'<th>MM21</th>{pc_head}{oi_head}</tr>')
+    head = (f'<tr><th>Grupo / Setor</th><th>Tendência (MM21)</th>'
+            f'<th>Detalhe</th>{pc_head}{oi_head}</tr>')
     termo = ""
     merc = (opcoes or {}).get("mercado") or {}
     oi_merc = oi.get("mercado") or {}
@@ -409,15 +470,18 @@ def _mood_block(mood: dict, opcoes: dict = None) -> str:
                                                     and math.isnan(oi_merc["oi_ratio"])):
         partes.append(f'posições em aberto {_pc_cell(oi_merc["oi_ratio"])}')
     if partes:
-        termo = (f'<p style="margin:6px 0 4px"><b>Termômetro de opções (Put/Call):</b> '
-                 f'mercado — {" · ".join(partes)}. '
-                 f'<span class="sub">Puts ÷ calls. &gt;1 = mais proteção/baixa; &lt;1 = mais '
-                 f'aposta em alta. Volume = giro do dia; posições = open interest (contratos '
-                 f'em aberto, mais estrutural).</span></p>')
+        termo = (f'<div class="kpi" style="margin:6px 0 10px">'
+                 f'<table class="kpi"><tr>'
+                 + "".join(f'<td><div class="lbl">Termômetro</div><div class="val" '
+                          f'style="font-size:13px">{p}</div></td>' for p in partes)
+                 + '</tr></table></div>')
+        termo += ('<p class="sub" style="margin:-6px 0 8px">Puts ÷ calls. &gt;1 = mais '
+                 'proteção/baixa; &lt;1 = mais aposta em alta. Volume = giro do dia; '
+                 'posições = open interest (contratos em aberto, mais estrutural).</p>')
     return (_secbar("Humor do mercado")
             + f'<p class="sub" style="margin:0 0 6px">Percentual dos papéis do universo '
             f'(BOVA11 + SMALL11) em alta/lateral/baixa pela média móvel de 21 pregões'
-            f'{", com o Put/Call ratio por setor" if tem_pc else ""}.</p>'
+            f'{", com o Put/Call ratio por índice e por setor" if tem_pc else ""}.</p>'
             f'{termo}<table>{head}{"".join(rows)}</table>')
 
 
@@ -689,7 +753,7 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
         ])
     except Exception:
         resumo_kpi = ""
-    topo = resumo_kpi + painel + _market_block(market) + _mood_block(mood, opcoes)
+    topo = resumo_kpi + painel + _market_block(market, macro, opcoes) + _mood_block(mood, opcoes)
     def _suf(g):
         p = group_pct.get(g) if isinstance(group_pct, dict) else group_pct
         return f" ({p}% de maior score)" if p else ""
@@ -850,7 +914,7 @@ def build_email_body(hoje: str, meta: dict, market: dict, mood: dict, n_sel: int
     corpo = (
         f'<h1>Relatório Quantitativo · Ações B3</h1>'
         f'<p class="sub" style="margin:0 0 14px">{_fmt_date(hoje)}</p>'
-        f'{painel}{_market_block(market)}{_mood_block(mood, opcoes)}'
+        f'{painel}{_market_block(market, macro, opcoes)}{_mood_block(mood, opcoes)}'
         f'<p style="margin:12px 0 6px"><b>{n_sel} papéis</b> passaram no corte '
         f'fundamentalista hoje ({n_graf} com oportunidade gráfica). O detalhamento — '
         f'fundamentos, preço &amp; risco e preços-teto por papel — está no {anexos}, '

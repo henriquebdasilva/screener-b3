@@ -580,9 +580,11 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 from opcoes import fetch_opcoes
                 tk_setor = {str(t): full.loc[t, "setor"] for t in full.index
                             if "setor" in full.columns}
-                opcoes_data = fetch_opcoes(ticker_setor=tk_setor)
+                tk_grupo = {str(t): full.loc[t, "grupo"] for t in full.index
+                            if "grupo" in full.columns}
+                opcoes_data = fetch_opcoes(ticker_setor=tk_setor, ticker_grupo=tk_grupo)
                 from posicoes import fetch_open_interest, fetch_aluguel
-                oi_data = fetch_open_interest(ticker_setor=tk_setor)
+                oi_data = fetch_open_interest(ticker_setor=tk_setor, ticker_grupo=tk_grupo)
                 aluguel_data = fetch_aluguel(ticker_setor=tk_setor)
                 if opcoes_data is not None and oi_data is not None:
                     opcoes_data["oi"] = oi_data      # anexa o open interest ao pacote de opções

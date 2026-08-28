@@ -100,13 +100,16 @@ def _ratio(call_vol: float, put_vol: float) -> dict:
 
 
 def put_call_ratios(opcoes: list, ticker_setor: dict = None,
-                    underlying_roots=None) -> dict:
-    """Razão Put/Call (por volume) do mercado, por setor e por ativo.
+                    underlying_roots=None, ticker_grupo: dict = None) -> dict:
+    """Razão Put/Call (por volume) do mercado, por setor, por ATIVO e por GRUPO de índice
+    (BOVA11/SMALL11 — média ponderada pelo volume dos papéis que compõem cada índice).
     As opções são casadas ao ATIVO-BASE pelo PREFIXO do código (ex.: 'PETRX40' começa com
     'PETR'), usando os roots das ações (do COTAHIST à vista e/ou do universo)."""
     roots = set(underlying_roots or [])
     if ticker_setor:
         roots |= {_raiz(tk) for tk in ticker_setor}
+    if ticker_grupo:
+        roots |= {_raiz(tk) for tk in ticker_grupo}
     roots_ord = sorted(roots, key=len, reverse=True)      # prefixo mais longo primeiro
 
     def base_de(opt_ticker: str) -> str:
@@ -118,6 +121,7 @@ def put_call_ratios(opcoes: list, ticker_setor: dict = None,
     por_base = {}
     mais_neg = {}                    # base -> opção com MAIOR volume (destaque negociada)
     strike_map = {}                  # código da opção -> strike limpo (do COTAHIST)
+    todas = []                       # todas as opções com base resolvida (p/ ranking global)
     for o in opcoes:
         b = base_de(o["ticker"])
         d = por_base.setdefault(b, [0.0, 0.0])
@@ -129,31 +133,47 @@ def put_call_ratios(opcoes: list, ticker_setor: dict = None,
             mais_neg[b] = {"code": o["ticker"], "strike": o.get("strike"),
                            "tipo": o["tipo"], "volume": o["volume"],
                            "negocios": o.get("negocios", 0)}
+        todas.append({**o, "base": b})
     por_ativo = {r: _ratio(c, p) for r, (c, p) in por_base.items()}
     tc = sum(v[0] for v in por_base.values())
     tp = sum(v[1] for v in por_base.values())
     mercado = _ratio(tc, tp)
 
-    por_setor = {}
-    if ticker_setor:
-        raiz_setor = {}
-        for tk, s in ticker_setor.items():
-            if s:
-                raiz_setor.setdefault(_raiz(tk), s)
+    def _agrupa(mapa_tk_grupo):
+        """Soma call/put dos ativos-base que pertencem a cada valor do mapa (setor OU grupo)."""
+        raiz_grp = {}
+        for tk, g in (mapa_tk_grupo or {}).items():
+            if g:
+                raiz_grp.setdefault(_raiz(tk), g)
         acc = {}
         for r, (c, p) in por_base.items():
-            s = raiz_setor.get(r)
-            if not s:
+            g = raiz_grp.get(r)
+            if not g:
                 continue
-            a = acc.setdefault(s, [0.0, 0.0])
+            a = acc.setdefault(g, [0.0, 0.0])
             a[0] += c
             a[1] += p
-        por_setor = {s: _ratio(c, p) for s, (c, p) in acc.items()}
+        return {g: _ratio(c, p) for g, (c, p) in acc.items()}
+
+    por_setor = _agrupa(ticker_setor)
+    por_grupo = _agrupa(ticker_grupo)     # ex.: {"BOVA11": {...}, "SMALL11": {...}}
     return {"mercado": mercado, "por_setor": por_setor, "por_ativo": por_ativo,
-            "mais_negociada": mais_neg, "strike_map": strike_map}
+            "por_grupo": por_grupo, "mais_negociada": mais_neg, "strike_map": strike_map,
+            "_todas": todas}
 
 
-def fetch_opcoes(ticker_setor: dict = None, data: str = None) -> dict | None:
+def top_negociadas(opcoes_result: dict, n: int = 10) -> list:
+    """Ranking GERAL das N opções mais negociadas do dia (por volume financeiro), com o
+    ativo-base, tipo, strike, volume e nº de negócios. Para o bloco 'Opções mais negociadas'
+    do resumo do mercado."""
+    todas = opcoes_result.get("_todas") or []
+    top = sorted(todas, key=lambda o: -o.get("volume", 0))[:n]
+    return [{"code": o["ticker"], "base": o["base"], "tipo": o["tipo"],
+             "strike": o.get("strike"), "volume": o["volume"],
+             "negocios": o.get("negocios", 0)} for o in top]
+
+
+def fetch_opcoes(ticker_setor: dict = None, data: str = None, ticker_grupo: dict = None) -> dict | None:
     """Baixa o COTAHIST (com fallback) e calcula os Put/Call ratios. None em falha.
     Só roda de verdade no ambiente do usuário (rede). Desligue com env OPCOES=0."""
     if os.getenv("OPCOES", "1") == "0":
@@ -164,10 +184,12 @@ def fetch_opcoes(ticker_setor: dict = None, data: str = None) -> dict | None:
         print("[opcoes] COTAHIST indisponível (B3 fora do ar ou formato do link mudou).")
         return None
     opcoes, spot = parse_cotahist(txt)
-    r = put_call_ratios(opcoes, ticker_setor, underlying_roots=spot.keys())
+    r = put_call_ratios(opcoes, ticker_setor, underlying_roots=spot.keys(),
+                        ticker_grupo=ticker_grupo)
     r["data"] = d
     r["n_opcoes"] = len(opcoes)
     r["spot"] = spot
+    r["top_negociadas"] = top_negociadas(r, n=10)
     print(f"[opcoes] COTAHIST {d}: {len(opcoes)} opções; P/C mercado="
           f"{r['mercado']['pc_ratio']:.2f}" if not math.isnan(r['mercado']['pc_ratio'])
           else f"[opcoes] COTAHIST {d}: {len(opcoes)} opções")

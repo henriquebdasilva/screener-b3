@@ -144,12 +144,18 @@ def fetch_macro(selic_pct: float = None) -> dict:
     m["focus_cambio"] = focus_anual("Câmbio", ano)
     m["focus_pib"] = focus_anual("PIB Total", ano)
 
-    try:                                                 # fluxo estrangeiro (best-effort B3)
+    try:                                                 # fluxo estrangeiro (BDI oficial)
         from fluxo import fetch_fluxo_estrangeiro
         fx = fetch_fluxo_estrangeiro()
         m["fluxo_estrangeiro"] = fx                      # dict ou None
     except Exception:
         m["fluxo_estrangeiro"] = None
+
+    try:                                                 # IFIX (BDI oficial)
+        from bdi_indices import fetch_ifix
+        m["ifix"] = fetch_ifix()                          # dict ou None
+    except Exception:
+        m["ifix"] = None
     return m
 
 
@@ -251,9 +257,15 @@ def _v(macro, k):
 
 
 def _row(label, valor, data, focus_txt=""):
-    return (f"<tr><td>{label}</td><td class='r'>{valor}</td>"
-            f"<td class='r' style='color:#6b7280'>{data}</td>"
-            f"<td class='r'>{focus_txt}</td></tr>")
+    """Layout de 2 colunas (Indicador | Valor) — colunas estreitas de texto (data/Focus) fazem
+    o xhtml2pdf sobrepor linhas em vez de abrir espaço; consolidar numa célula só evita isso."""
+    extra = []
+    if data and data != "n/d":
+        extra.append(f"<span class='sub'>base {data}</span>")
+    if focus_txt:
+        extra.append(f"Focus {focus_txt}")
+    linha2 = f"<br><span style='font-size:10px;color:#6b7280'>{' · '.join(extra)}</span>" if extra else ""
+    return f"<tr><td>{label}</td><td class='r'>{valor}{linha2}</td></tr>"
 
 
 def render_panel(macro: dict, regime: dict) -> str:
@@ -292,6 +304,14 @@ def render_panel(macro: dict, regime: dict) -> str:
     rows.append(_row("Dívida bruta (DBGG)",
                      f"{dbgg:.1f}% PIB" if dbgg is not None else "n/d",
                      _fmt_d(g("dbgg").get("data")), ""))
+    ifix = macro.get("ifix")
+    if ifix and ifix.get("fechamento") is not None:
+        vd = ifix.get("var_dia_pct")
+        cor = "#16a34a" if (vd is not None and vd >= 0) else "#dc2626" if vd is not None else "#6b7280"
+        seta = f" <span style='color:{cor}'>{vd:+.2f}%</span>" if vd is not None else ""
+        rows.append(_row("IFIX (fundos imobiliários)",
+                         f"{ifix['fechamento']:,.0f} pts{seta}",
+                         _fmt_d(ifix.get("data")), ""))
     fx = macro.get("fluxo_estrangeiro")
     if fx and fx.get("dia") is not None:
         dia = fx["dia"]
@@ -303,6 +323,14 @@ def render_panel(macro: dict, regime: dict) -> str:
                         f"{fx['mes']:+,.0f}</span>")
         rows.append(_row("Fluxo estrangeiro (B3)",
                          f"<span style='color:{cor}'>{dia:+,.0f}</span> R$ mi{extra_fx}",
+                         _fmt_d(fx.get("data")), ""))
+    elif fx and fx.get("acum_mes") is not None:
+        # 1º dia do mês ou 1ª execução: ainda sem o valor isolado do dia, mas já dá o acumulado
+        acc = fx["acum_mes"]
+        cor = "#16a34a" if acc >= 0 else "#dc2626"
+        rows.append(_row("Fluxo estrangeiro (B3)",
+                         f"acum. mês <span style='color:{cor}'>{acc:+,.0f}</span> R$ mi "
+                         f"<span class='sub'>(dia disponível amanhã)</span>",
                          _fmt_d(fx.get("data")), ""))
     else:
         rows.append(_row("Fluxo estrangeiro (B3)", "n/d", "", ""))
@@ -319,10 +347,10 @@ def render_panel(macro: dict, regime: dict) -> str:
     else:
         badge = '<p class="sub">Índice de Regime Brasil: dados macro indisponíveis hoje.</p>'
 
-    head = ("<tr><th>Indicador</th><th class='r'>Atual</th><th class='r'>Data-base</th>"
-            "<th class='r'>Focus (ano)</th></tr>")
+    head = "<tr><th>Indicador</th><th class='r'>Atual</th></tr>"
     return (f'<h2 style="font-size:15px;margin:6px 0 6px;color:#0f172a">Panorama macro</h2>'
-            f'{badge}<div class="ind"><table>{head}{"".join(rows)}</table></div>'
+            f'{badge}<div class="ind"><table>{head}'
+            f'{"".join(rows)}</table></div>'
             '<p class="sub" style="margin:4px 0 14px">Fontes: BCB (SGS e Focus) e yfinance. '
             'Focus ▼ = expectativa caiu vs. ~30 dias; ▲ = subiu. Relatório macro completo '
             'no anexo.</p>')
