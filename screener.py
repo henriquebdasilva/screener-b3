@@ -77,7 +77,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     from datafeed import (get_selic, get_insider_sells, avg_annual_dy,
                           listed_years, paid_dividends_ge, get_net_income_history,
                           dividends_no_cut, avg_payout, price_stats, beta_corr,
-                          get_ibov_close, get_balance_metrics)
+                          get_ibov_close, get_usd_close, corr_usd, get_balance_metrics)
     selic = get_selic()
     print(f"Universo: {len(items)} tickers ({universe}). Selic usada: {selic:.2f}%")
 
@@ -88,6 +88,15 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     ibov_close = get_ibov_close()                # p/ beta e correlação com o Ibovespa
     if ibov_close is None:
         print("[risco] Ibovespa (^BVSP) indisponível — beta/correlação ficarão n/d.")
+    usd_close = get_usd_close()                  # p/ correlação com o dólar (USD/BRL)
+    if usd_close is None:
+        print("[risco] USD/BRL indisponível — correlação com dólar ficará n/d.")
+    ibov_ytd = float("nan")                       # p/ rendimento relativo ao Ibovespa no ano
+    if ibov_close is not None and len(ibov_close):
+        _today = ibov_close.index[-1]
+        _yr = ibov_close[ibov_close.index.year == _today.year]
+        if len(_yr):
+            ibov_ytd = (float(ibov_close.iloc[-1]) / float(_yr.iloc[0]) - 1) * 100
     for i, (tk, orig) in enumerate(items, 1):
         origem[tk] = "+".join(orig)
         try:
@@ -128,7 +137,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             div_nocut[tk] = dividends_no_cut(px, 5, 0.20)
             pstats[tk] = price_stats(px)
             b, cr = beta_corr(px, ibov_close)
-            risco[tk] = {"beta": b, "corr_ibov": cr}
+            cu = corr_usd(px, usd_close)
+            risco[tk] = {"beta": b, "corr_ibov": cr, "corr_usd": cu}
         except Exception as e:
             print(f"  [preço] {tk}: {e}")
         try:
@@ -205,10 +215,14 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                           df.get("pl", pd.Series(index=df.index)))
     ]
     # métricas técnicas / de risco por papel
-    for _c in ("min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100"):
+    for _c in ("min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
+              "mediana_1a", "max_drawdown", "vol_anual", "ret_ytd"):
         df[_c] = [pstats.get(t, {}).get(_c, float("nan")) for t in df.index]
     df["beta"] = [risco.get(t, {}).get("beta", float("nan")) for t in df.index]
     df["corr_ibov"] = [risco.get(t, {}).get("corr_ibov", float("nan")) for t in df.index]
+    df["corr_usd"] = [risco.get(t, {}).get("corr_usd", float("nan")) for t in df.index]
+    # rendimento no ano (YTD) RELATIVO ao Ibovespa: papel - índice, em pontos percentuais
+    df["rel_ibov_ytd"] = df["ret_ytd"] - ibov_ytd if pd.notna(ibov_ytd) else float("nan")
     for _c in ("liq_geral", "grau_endiv", "indep_fin"):
         df[_c] = [balanco.get(t, {}).get(_c, float("nan")) for t in df.index]
     df["roe_medio"] = [roe_med.get(t, float("nan")) for t in df.index]
@@ -525,7 +539,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "liq_corr", "div_patrim", "peg", "payout", "cresc_5a", "pl_fut",
             "roa", "liq_geral", "grau_endiv", "indep_fin",
             "min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
-            "beta", "corr_ibov", "close",
+            "mediana_1a", "max_drawdown", "vol_anual", "ret_ytd", "rel_ibov_ytd",
+            "beta", "corr_ibov", "corr_usd", "close",
             "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_projetivo",
             "teto_graham_selic", "teto_mult_ebitda",

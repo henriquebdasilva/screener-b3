@@ -524,6 +524,59 @@ _IND_METRICS = [
 ]
 
 
+def _stats_table(df: pd.DataFrame) -> str:
+    """Tabela de estatísticas anuais por papel: retorno no ano (YTD) e vs. Ibovespa, drawdown
+    máximo, volatilidade anualizada, mediana do preço (1a) e correlação com o dólar."""
+    def cell(v, casas=2):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return "<td class='r mut'>—</td>"
+        return f"<td class='r'>{float(v):.{casas}f}</td>"
+
+    def pct_sign(v, invert_color=False):
+        if v is None or (isinstance(v, float) and pd.isna(v)):
+            return "<td class='r mut'>—</td>"
+        x = float(v)
+        pos = x < 0 if invert_color else x >= 0     # drawdown: negativo é "neutro", não "ruim"
+        cls = "g" if pos else "rd"
+        return f"<td class='r {cls}'>{x:+.1f}%</td>"
+
+    head = ("<tr><th>Ativo</th><th class='r'>Retorno no ano</th>"
+            "<th class='r'>vs Ibov (ano)</th><th class='r'>Drawdown máx (1a)</th>"
+            "<th class='r'>Volatilidade (1a)</th><th class='r'>Mediana (1a)</th>"
+            "<th class='r'>Corr. USD</th></tr>")
+    linhas = []
+    for tk, r in df.iterrows():
+        dd = r.get("max_drawdown")
+        dd_cell = (f"<td class='r rd'>{float(dd):.1f}%</td>"
+                  if pd.notna(dd) else "<td class='r mut'>—</td>")
+        linhas.append(
+            f"<tr><td><b>{tk}</b></td>"
+            f"{pct_sign(r.get('ret_ytd'))}"
+            f"{pct_sign(r.get('rel_ibov_ytd'))}"
+            f"{dd_cell}"
+            f"{cell(r.get('vol_anual'), 1)}"
+            f"{cell(r.get('mediana_1a'), 2)}"
+            f"{_num_sign_cell(r.get('corr_usd'))}</tr>")
+    leg = ('<p class="sub" style="margin:4px 0 0">Retorno no ano e vs Ibov (ano) = desempenho '
+           'do papel no ano corrente e a diferença em pontos percentuais frente ao Ibovespa no '
+           'mesmo período. Drawdown máx = maior queda pico→vale nos últimos ~12 meses. '
+           'Volatilidade = desvio-padrão anualizado dos retornos diários (~1 ano) — quanto '
+           'maior, mais oscila o preço. Mediana (1a) = preço mediano do último ano (referência '
+           'menos sensível a picos/mínimas que a média). Corr. USD = correlação com o dólar '
+           '(USD/BRL, retornos diários ~1 ano): <span style="color:#16a34a">+</span> tende a '
+           'subir com o dólar (exportadoras/commodities), '
+           '<span style="color:#dc2626">−</span> tende a subir com o real forte '
+           '(importadoras/consumo).</p>')
+    return f'<h3 style="{_H3}">Estatísticas do ano</h3><table>{head}{"".join(linhas)}</table>{leg}'
+
+
+def _num_sign_cell(v):
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return "<td class='r mut'>—</td>"
+    cls = "g" if float(v) >= 0 else "rd"
+    return f"<td class='r {cls}'>{float(v):+.2f}</td>"
+
+
 def _risco_table(df: pd.DataFrame) -> str:
     """Tabela técnica/risco: preço atual, mínima e máxima de 52 semanas (R$), distância da
     mínima 52s (com sinal/cor), posição vs MM100 (acima/abaixo), beta e correlação c/ Ibov."""
@@ -661,6 +714,7 @@ def _group_block(df: pd.DataFrame, title: str, show_ind: bool = True,
         parts.append(_ind_table(df))
     if show_risco:
         parts.append(_risco_table(df))
+        parts.append(_stats_table(df))
     if show_teto:
         parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
     if show_agenda and ("prox_resultado" in df.columns or "ex_dividendo" in df.columns):
@@ -719,6 +773,7 @@ def _watch_block(df: pd.DataFrame, title: str, sub: str, posicao: bool = False,
         parts.append(_ind_table(df))
     if show_risco:
         parts.append(_risco_table(df))
+        parts.append(_stats_table(df))
     if show_teto:
         parts.append(f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}')
     if show_agenda and ("prox_resultado" in df.columns or "ex_dividendo" in df.columns):

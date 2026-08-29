@@ -531,8 +531,9 @@ def dividends_no_cut(px, years: int = 5, tol: float = 0.20):
 
 
 def price_stats(px) -> dict:
-    """Estatísticas técnicas do histórico: mínima/máxima 1 ano, distância da mínima 52s e
-    da média de 100 dias (com sinal: + acima / − abaixo)."""
+    """Estatísticas técnicas do histórico (~1 ano): mínima/máxima 52s, distância da mínima e
+    da média de 100 dias, MEDIANA do preço, DRAWDOWN MÁXIMO (pico->vale), VOLATILIDADE
+    anualizada e RETORNO no ano (YTD) — para contexto de risco por papel."""
     out = {}
     try:
         close = px["Close"].dropna()
@@ -548,6 +549,21 @@ def price_stats(px) -> dict:
         if len(close) >= 100:
             mm100 = float(close.rolling(100).mean().iloc[-1])
             out["dist_mm100"] = round((c / mm100 - 1) * 100, 1) if mm100 > 0 else float("nan")
+        # mediana do preço em ~1 ano (mais robusta a outliers que a média)
+        out["mediana_1a"] = round(float(w.median()), 2)
+        # drawdown máximo: maior queda pico->vale dentro da janela de ~1 ano (%)
+        roll_max = w.cummax()
+        dd = (w / roll_max - 1) * 100
+        out["max_drawdown"] = round(float(dd.min()), 1) if len(dd) else float("nan")
+        # volatilidade anualizada dos retornos diários (%) — desvio padrão × √252
+        rets = w.pct_change().dropna()
+        out["vol_anual"] = (round(float(rets.std() * (252 ** 0.5) * 100), 1)
+                            if len(rets) > 20 else float("nan"))
+        # retorno da própria ação no ano corrente (YTD, %) — p/ comparar com o Ibovespa
+        today = close.index[-1]
+        yr = close[close.index.year == today.year]
+        out["ret_ytd"] = (round((c / float(yr.iloc[0]) - 1) * 100, 1)
+                          if len(yr) else float("nan"))
     except Exception:
         pass
     return out
@@ -563,6 +579,39 @@ def get_ibov_close(period: str = "2y"):
         return s if len(s) else None
     except Exception:
         return None
+
+
+def get_usd_close(period: str = "2y"):
+    """Fechamentos diários do USD/BRL (yfinance 'BRL=X') para correlação cambial por papel.
+    None em falha."""
+    try:
+        import yfinance as yf
+        h = yf.Ticker("BRL=X").history(period=period, auto_adjust=True)
+        s = h["Close"].dropna()
+        s.index = s.index.tz_localize(None) if getattr(s.index, "tz", None) else s.index
+        return s if len(s) else None
+    except Exception:
+        return None
+
+
+def corr_usd(px, usd_close, window: int = 252) -> float:
+    """Correlação dos retornos diários da ação vs. USD/BRL (~1 ano). POSITIVA = a ação tende
+    a subir junto com o dólar (ex.: exportadoras/commodities); NEGATIVA = junto com o real
+    forte (ex.: importadoras/consumo doméstico endividado em dólar). nan se faltar dado."""
+    try:
+        if px is None or usd_close is None:
+            return float("nan")
+        s = px["Close"].copy()
+        s.index = s.index.tz_localize(None) if getattr(s.index, "tz", None) else s.index
+        rs = s.pct_change()
+        ru = usd_close.pct_change()
+        j = pd.concat([rs, ru], axis=1, join="inner").dropna()
+        if len(j) < 60:
+            return float("nan")
+        j = j.iloc[-window:]
+        return round(float(j.iloc[:, 0].corr(j.iloc[:, 1])), 2)
+    except Exception:
+        return float("nan")
 
 
 def beta_corr(px, ibov_close, window: int = 252):
