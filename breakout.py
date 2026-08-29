@@ -41,7 +41,7 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
-__build__ = "2026-08-28b-candidato-preconf+virada-goldencross"   # marcador de versão (aparece no log)
+__build__ = "2026-08-29-bandeira-debug+candidato-por-proximidade"   # marcador de versão (aparece no log)
 
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
@@ -404,7 +404,8 @@ def _reversal_context(df, abs_i1: int, base: float, lookback: int,
 def detect_bull_flag(df, pole_win: int = 20, pole_min: float = 0.12,
                      flag_win: int = 15, flag_min: int = 7,
                      flag_max_retrace: float = 0.45, flag_min_retrace: float = 0.05,
-                     break_win: int = 3, max_ext: float = 0.10):
+                     break_win: int = 3, max_ext: float = 0.10,
+                     debug: bool = False, ticker: str = ""):
     """Bandeira de alta: forte alta ('mastro', ≥pole_min em pole_win pregões) seguida de
     consolidação curta ('bandeira', recuo ≤flag_max_retrace). A janela da bandeira é FLEXÍVEL:
     testa de `flag_min` (default 7) a `flag_win` (default 15) pregões e aceita a mais curta que
@@ -412,8 +413,15 @@ def detect_bull_flag(df, pole_win: int = 20, pole_min: float = 0.12,
     baixo ou lateral. CONFIRMA quando o preço rompe a LINHA DE TENDÊNCIA SUPERIOR (descendente).
     FRESCOR: o fechamento antes da janela de rompimento ainda estava na/abaixo da linha.
     EXTENSÃO: não sinaliza se já esticou >max_ext acima da linha superior ou do topo do mastro.
-    """
+    Retorna (confirmado_ou_None, candidato_ou_None) — candidato = estrutura válida (mastro +
+    consolidação com recuo ok) mesmo sem ainda ter rompido a linha."""
     close = df["Close"]
+
+    def _dbg(msg):
+        if debug:
+            print(f"[padrao-debug {ticker}] (bandeira) {msg}")
+
+    candidato = None
     flag_min = max(break_win + 4, int(flag_min))          # piso técnico (polyfit + rompimento)
     for flag_len in range(flag_min, int(flag_win) + 1):   # bandeira mais curta primeiro
         need = pole_win + flag_len
@@ -423,12 +431,18 @@ def detect_bull_flag(df, pole_win: int = 20, pole_min: float = 0.12,
         pole, flag = seg.iloc[:pole_win], seg.iloc[pole_win:]
         pole_low, pole_high = float(pole.min()), float(pole.max())
         if pole_low <= 0 or (pole_high / pole_low - 1) < pole_min:
+            _dbg(f"flag_len={flag_len}: mastro fraco demais "
+                 f"({(pole_high/pole_low-1)*100 if pole_low>0 else 0:.1f}% < {pole_min*100:.0f}%)")
             continue
         flag_low = float(flag.min())
         retrace = (pole_high - flag_low) / (pole_high - pole_low)
         if retrace > flag_max_retrace:               # recuou demais -> não é bandeira
+            _dbg(f"flag_len={flag_len}: recuo grande demais ({retrace*100:.1f}% > "
+                 f"{flag_max_retrace*100:.0f}%) — mastro {(pole_high/pole_low-1)*100:.1f}%")
             continue
         if retrace < flag_min_retrace:               # recuo raso demais -> continuação, não bandeira
+            _dbg(f"flag_len={flag_len}: recuo raso demais ({retrace*100:.1f}% < "
+                 f"{flag_min_retrace*100:.0f}%) — mastro {(pole_high/pole_low-1)*100:.1f}%")
             continue
         body = flag.iloc[:-break_win]                # consolidação (sem os pregões de rompimento)
         y = body.values.astype(float)
@@ -436,6 +450,7 @@ def detect_bull_flag(df, pole_win: int = 20, pole_min: float = 0.12,
         slope, intercept = np.polyfit(x, y, 1)
         ampl = float(body.max() - body.min()) or 1.0
         if slope > 0.05 * ampl:                      # subindo -> não é bandeira
+            _dbg(f"flag_len={flag_len}: consolidação ainda subindo (não achatou) — descartado")
             continue
         resid = y - (slope * x + intercept)
         buf = float(np.nanmax(resid)) if len(resid) else 0.0
@@ -445,13 +460,25 @@ def detect_bull_flag(df, pole_win: int = 20, pole_min: float = 0.12,
         brk = close.iloc[-break_win:]
         rompeu = (cur >= upper_ref and cur > prev and cur >= float(brk.max()))
         fresco = prev <= upper_ref * (1 + 0.01)      # antes do rompimento ainda estava na linha
+        dist_pct = cur / upper_ref - 1
         nao_esticado = (cur <= upper_ref * (1 + max_ext) and
                         cur <= pole_high * (1 + max_ext))
+        _dbg(f"flag_len={flag_len}: mastro {(pole_high/pole_low-1)*100:.1f}%, "
+             f"recuo {retrace*100:.1f}%, linha superior R${upper_ref:.2f}, fechou R${cur:.2f} "
+             f"({dist_pct*100:+.1f}% da linha) | rompeu={rompeu} fresco={fresco} "
+             f"não_esticado={nao_esticado}")
+        # estrutura válida (mastro + recuo ok + consolidação achatada) -> candidato, mesmo sem
+        # ainda ter rompido/segurado a linha
+        if candidato is None or abs(dist_pct) < abs(candidato["ext_atual"]):
+            candidato = {"neckline": round(upper_ref, 2), "base": pole_low,
+                        "ext_atual": dist_pct, "pole_pct": (pole_high/pole_low-1)*100.0,
+                        "flag_retrace": retrace*100.0, "flag_dias": flag_len}
         if rompeu and fresco and nao_esticado and cur >= pole_high * 0.90:
+            _dbg(f">>> BANDEIRA CONFIRMADA: linha R${upper_ref:.2f}")
             return {"pole_pct": (pole_high / pole_low - 1) * 100.0,
                     "flag_retrace": retrace * 100.0, "flag_dias": flag_len,
-                    "resistencia": round(upper_ref, 2), "incl": round(slope, 4)}
-    return None
+                    "resistencia": round(upper_ref, 2), "incl": round(slope, 4)}, candidato
+    return None, candidato
 
 
 def detect_cup_handle(df, cup_min: int = 20, cup_max: int = 90, handle_max: int = 20,
@@ -688,8 +715,9 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                                            debug=_pdbg, ticker=ticker)
         tb, tb_cand = detect_triple_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep)
         ch = detect_cup_handle(df, max_ext=flag_max_ext, debug=_pdbg, ticker=ticker)
-        bf = detect_bull_flag(df, max_ext=flag_max_ext, flag_min=flag_min_dias,
-                              pole_min=flag_pole_min, flag_min_retrace=flag_min_retrace)
+        bf, bf_cand = detect_bull_flag(df, max_ext=flag_max_ext, flag_min=flag_min_dias,
+                                       pole_min=flag_pole_min, flag_min_retrace=flag_min_retrace,
+                                       debug=_pdbg, ticker=ticker)
         if tb:
             res.signal, res.strategy = True, TRIPLE_BOTTOM_STR
             res.note = f"Fundo triplo — rompeu pescoço ~R${tb['neckline']:.2f} (candidato)"
@@ -707,15 +735,17 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                         f"(candidato)")
         else:
             # nenhum padrão CONFIRMADO — mas pode haver um CANDIDATO pré-confirmação
-            # (estrutura de W/triplo válida, só falta confirmar/segurar o rompimento do pescoço)
-            melhor = None
-            if tb_cand and db_cand:
-                melhor = ("Fundo triplo", tb_cand) if tb_cand["ext_atual"] >= db_cand["ext_atual"] \
-                    else ("Fundo duplo", db_cand)
-            elif tb_cand:
-                melhor = ("Fundo triplo", tb_cand)
-            elif db_cand:
-                melhor = ("Fundo duplo", db_cand)
+            # (estrutura válida, só falta confirmar/segurar o rompimento). Entre vários
+            # candidatos possíveis, escolhe o MAIS PRÓXIMO de confirmar (menor distância
+            # absoluta ao gatilho) — não uma ordem fixa de prioridade entre os tipos.
+            candidatos = []
+            if tb_cand:
+                candidatos.append(("Fundo triplo", tb_cand))
+            if db_cand:
+                candidatos.append(("Fundo duplo", db_cand))
+            if bf_cand:
+                candidatos.append(("Bandeira de alta", bf_cand))
+            melhor = min(candidatos, key=lambda t: abs(t[1]["ext_atual"])) if candidatos else None
             if melhor:
                 nome, c = melhor
                 res.candidato_padrao = nome

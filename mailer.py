@@ -79,6 +79,8 @@ tr:nth-child(even) td{background:#f3f4f6}
 .romp{background:#dcfce7;color:#166534}.piv{background:#fef9c3;color:#854d0e}
 .nao{background:#e5e7eb;color:#4b5563}
 .pad{background:#dbeafe;color:#1e40af}
+.cand{background:#fff;color:#6b7280;border:1px dashed #cbd5e1;font-style:italic;
+      font-weight:normal}
 .warn{color:#6b7280;font-size:12px;margin-top:16px}
 .empty{color:#6b7280;font-style:italic}
 /* ---- faixa de título de seção (barra colorida) ---- */
@@ -158,9 +160,9 @@ def _fmt_row(r) -> str:
         cand = str(r.get("candidato_padrao", "") or "")
         if cand:
             cand_nota = str(r.get("candidato_nota", "") or cand)
-            extra_tags.append(f'<span class="tag pad" title="{cand_nota}">{cand} (quase)</span>')
+            extra_tags.append(f'<span class="tag cand" title="{cand_nota}">{cand} (quase)</span>')
         if r.get("virada_alta"):
-            extra_tags.append('<span class="tag romp">Virada p/ Alta</span>')
+            extra_tags.append('<span class="tag cand">Virada p/ Alta</span>')
     if extra_tags:
         tag = tag + "<br>" + " ".join(extra_tags)
     def num(x, d=1):
