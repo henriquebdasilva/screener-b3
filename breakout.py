@@ -41,7 +41,7 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
-__build__ = "2026-08-29b-bandeira-mastro-adaptativo"   # marcador de versão (aparece no log)
+__build__ = "2026-08-29c-bandeira-slope-corrigido"   # marcador de versão (aparece no log)
 
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
@@ -439,8 +439,16 @@ def detect_bull_flag(df, pole_win: int = 20, pole_win_max: int = 50, pole_min: f
         x = np.arange(len(y), dtype=float)
         slope, intercept = np.polyfit(x, y, 1)
         ampl = float(body.max() - body.min()) or 1.0
-        if slope > 0.05 * ampl:                      # ainda subindo -> não achatou, não é bandeira
-            _dbg(f"flag_len={flag_len}: consolidação ainda subindo (não achatou) — descartado")
+        # drift TOTAL da janela (slope × nº de dias) vs. amplitude — antes comparávamos a
+        # inclinação POR DIA direto com a amplitude TOTAL (erro de escala: ficava mais
+        # permissivo em janelas longas e mais rígido em curtas, de forma inconsistente).
+        # Também permitimos uma leve alta dentro da bandeira (comum em "high tight flags"),
+        # desde que a tendência não consuma mais que ~40% da amplitude da consolidação.
+        drift_total = slope * (len(y) - 1)
+        drift_frac = drift_total / ampl
+        if drift_frac > 0.40:
+            _dbg(f"flag_len={flag_len}: consolidação ainda subindo demais "
+                 f"(drift {drift_frac*100:.0f}% da amplitude > 40%) — descartado")
             continue
         resid = y - (slope * x + intercept)
         buf = float(np.nanmax(resid)) if len(resid) else 0.0
