@@ -549,9 +549,12 @@ def price_stats(px) -> dict:
         if len(close) >= 100:
             mm100 = float(close.rolling(100).mean().iloc[-1])
             out["dist_mm100"] = round((c / mm100 - 1) * 100, 1) if mm100 > 0 else float("nan")
-        # mediana do preço em ~1 ano (mais robusta a outliers que a média)
+        # mediana do preço em ~1 ano (mais robusta a outliers que a média) + a MÉDIA também
         out["mediana_1a"] = round(float(w.median()), 2)
-        # drawdown máximo: maior queda pico->vale dentro da janela de ~1 ano (%)
+        out["media_1a"] = round(float(w.mean()), 2)
+        # drawdown máximo: maior queda pico->vale dentro da janela de ~1 ano (%), medido
+        # SEMPRE sobre o preço em si (pico corrente do próprio histórico) — não usa média
+        # nem mediana como referência.
         roll_max = w.cummax()
         dd = (w / roll_max - 1) * 100
         out["max_drawdown"] = round(float(dd.min()), 1) if len(dd) else float("nan")
@@ -564,6 +567,11 @@ def price_stats(px) -> dict:
         yr = close[close.index.year == today.year]
         out["ret_ytd"] = (round((c / float(yr.iloc[0]) - 1) * 100, 1)
                           if len(yr) else float("nan"))
+        # mínima e máxima do PRÓPRIO ANO CORRENTE (diferente de min/max 52 semanas, que é
+        # janela móvel de 12 meses; aqui é estritamente 1º de janeiro até hoje)
+        if len(yr):
+            out["min_ytd"] = round(float(yr.min()), 2)
+            out["max_ytd"] = round(float(yr.max()), 2)
     except Exception:
         pass
     return out

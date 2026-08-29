@@ -216,7 +216,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     ]
     # métricas técnicas / de risco por papel
     for _c in ("min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
-              "mediana_1a", "max_drawdown", "vol_anual", "ret_ytd"):
+              "mediana_1a", "media_1a", "max_drawdown", "vol_anual", "ret_ytd", "min_ytd", "max_ytd"):
         df[_c] = [pstats.get(t, {}).get(_c, float("nan")) for t in df.index]
     df["beta"] = [risco.get(t, {}).get("beta", float("nan")) for t in df.index]
     df["corr_ibov"] = [risco.get(t, {}).get("corr_ibov", float("nan")) for t in df.index]
@@ -539,7 +539,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "liq_corr", "div_patrim", "peg", "payout", "cresc_5a", "pl_fut",
             "roa", "liq_geral", "grau_endiv", "indep_fin",
             "min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
-            "mediana_1a", "max_drawdown", "vol_anual", "ret_ytd", "rel_ibov_ytd",
+            "mediana_1a", "media_1a", "max_drawdown", "vol_anual", "ret_ytd", "min_ytd", "max_ytd", "rel_ibov_ytd",
             "beta", "corr_ibov", "corr_usd", "close",
             "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_projetivo",

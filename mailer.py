@@ -525,12 +525,13 @@ _IND_METRICS = [
 
 
 def _stats_table(df: pd.DataFrame) -> str:
-    """Tabela de estatísticas anuais por papel: retorno no ano (YTD) e vs. Ibovespa, drawdown
-    máximo, volatilidade anualizada, mediana do preço (1a) e correlação com o dólar."""
-    def cell(v, casas=2):
+    """Tabela de estatísticas anuais por papel: preço atual, retorno no ano (YTD) e vs.
+    Ibovespa, mínima/máxima do ano, drawdown máximo, volatilidade anualizada, média e
+    mediana do preço (1a) e correlação com o Ibovespa e com o dólar."""
+    def cell(v, casas=2, sufixo=""):
         if v is None or (isinstance(v, float) and pd.isna(v)):
             return "<td class='r mut'>—</td>"
-        return f"<td class='r'>{float(v):.{casas}f}</td>"
+        return f"<td class='r'>{float(v):.{casas}f}{sufixo}</td>"
 
     def pct_sign(v, invert_color=False):
         if v is None or (isinstance(v, float) and pd.isna(v)):
@@ -540,10 +541,12 @@ def _stats_table(df: pd.DataFrame) -> str:
         cls = "g" if pos else "rd"
         return f"<td class='r {cls}'>{x:+.1f}%</td>"
 
-    head = ("<tr><th>Ativo</th><th class='r'>Retorno no ano</th>"
-            "<th class='r'>vs Ibov (ano)</th><th class='r'>Drawdown máx (1a)</th>"
-            "<th class='r'>Volatilidade (1a)</th><th class='r'>Mediana (1a)</th>"
-            "<th class='r'>Corr. USD</th></tr>")
+    head = ("<tr><th>Ativo</th><th class='r'>Preço</th><th class='r'>Retorno no ano</th>"
+            "<th class='r'>vs Ibov (ano)</th><th class='r'>Mín (ano)</th>"
+            "<th class='r'>Máx (ano)</th><th class='r'>Drawdown máx (1a)</th>"
+            "<th class='r'>Volatilidade (1a)</th><th class='r'>Média (1a)</th>"
+            "<th class='r'>Mediana (1a)</th>"
+            "<th class='r'>Corr. Ibov</th><th class='r'>Corr. USD</th></tr>")
     linhas = []
     for tk, r in df.iterrows():
         dd = r.get("max_drawdown")
@@ -551,22 +554,31 @@ def _stats_table(df: pd.DataFrame) -> str:
                   if pd.notna(dd) else "<td class='r mut'>—</td>")
         linhas.append(
             f"<tr><td><b>{tk}</b></td>"
+            f"{cell(r.get('close'), 2)}"
             f"{pct_sign(r.get('ret_ytd'))}"
             f"{pct_sign(r.get('rel_ibov_ytd'))}"
+            f"{cell(r.get('min_ytd'), 2)}"
+            f"{cell(r.get('max_ytd'), 2)}"
             f"{dd_cell}"
-            f"{cell(r.get('vol_anual'), 1)}"
+            f"{cell(r.get('vol_anual'), 1, sufixo='%')}"
+            f"{cell(r.get('media_1a'), 2)}"
             f"{cell(r.get('mediana_1a'), 2)}"
+            f"{_num_sign_cell(r.get('corr_ibov'))}"
             f"{_num_sign_cell(r.get('corr_usd'))}</tr>")
-    leg = ('<p class="sub" style="margin:4px 0 0">Retorno no ano e vs Ibov (ano) = desempenho '
-           'do papel no ano corrente e a diferença em pontos percentuais frente ao Ibovespa no '
-           'mesmo período. Drawdown máx = maior queda pico→vale nos últimos ~12 meses. '
-           'Volatilidade = desvio-padrão anualizado dos retornos diários (~1 ano) — quanto '
-           'maior, mais oscila o preço. Mediana (1a) = preço mediano do último ano (referência '
-           'menos sensível a picos/mínimas que a média). Corr. USD = correlação com o dólar '
-           '(USD/BRL, retornos diários ~1 ano): <span style="color:#16a34a">+</span> tende a '
-           'subir com o dólar (exportadoras/commodities), '
-           '<span style="color:#dc2626">−</span> tende a subir com o real forte '
-           '(importadoras/consumo).</p>')
+    leg = ('<p class="sub" style="margin:4px 0 0">Preço em R$. Retorno no ano e vs Ibov (ano) = '
+           'desempenho do papel no ano corrente e a diferença em pontos percentuais frente ao '
+           'Ibovespa no mesmo período. Mín/Máx (ano) = mínima e máxima do PRÓPRIO ano corrente '
+           '(1º de janeiro até hoje — diferente de Mín/Máx 52s da tabela acima, que é janela '
+           'móvel de 12 meses). Drawdown máx = maior queda pico→vale nos últimos ~12 meses, '
+           'medida sobre o PREÇO em si (não sobre média/mediana): a maior queda percentual do '
+           'preço em relação ao pico mais recente até aquele ponto. Volatilidade = '
+           'desvio-padrão anualizado dos retornos diários (~1 ano). Média e Mediana (1a) = '
+           'preço médio e mediano do último ano (a mediana é mais robusta a picos/mínimas '
+           'pontuais). Corr. Ibov/USD = correlação dos retornos diários (~1 ano) com o '
+           'Ibovespa e com o dólar (USD/BRL): <span style="color:#16a34a">+</span> na mesma '
+           'direção, <span style="color:#dc2626">−</span> na direção oposta — correlação com '
+           'o dólar positiva sugere exportadora/commodity, negativa sugere consumo doméstico/'
+           'importadora.</p>')
     return f'<h3 style="{_H3}">Estatísticas do ano</h3><table>{head}{"".join(linhas)}</table>{leg}'
 
 
@@ -602,7 +614,7 @@ def _risco_table(df: pd.DataFrame) -> str:
             "<th class='r'>Mín 52s</th><th class='r'>Máx 52s</th>"
             "<th class='r'>vs Min52</th>"
             "<th class='r'>vs MM100</th><th class='r'>Beta</th>"
-            "<th class='r'>Corr.Ibov</th><th class='r'>P/C opç.</th>"
+            "<th class='r'>P/C opç.</th>"
             "<th class='r'>Aluguel</th><th class='r'>Maior OI</th>"
             "<th class='r'>Mais neg.</th></tr>")
     linhas = []
@@ -612,7 +624,7 @@ def _risco_table(df: pd.DataFrame) -> str:
             f"{cell(r.get('min_52s'))}{cell(r.get('max_52s'))}"
             f"{cell(r.get('dist_min52'), pct=True, sign=True)}"
             f"{cell(r.get('dist_mm100'), pct=True, sign=True)}"
-            f"{num_sign(r.get('beta'))}{num_sign(r.get('corr_ibov'))}"
+            f"{num_sign(r.get('beta'))}"
             f"<td class='r'>{_pc_cell((_PC_ATIVO.get(_raiz_tk(tk)) or {}).get('pc_ratio'))}</td>"
             f"<td class='r'>{_aluguel_cell(tk, r)}</td>"
             f"<td class='r'>{_dest_oi_cell(tk)}</td>"
@@ -620,12 +632,11 @@ def _risco_table(df: pd.DataFrame) -> str:
     leg = ('<p class="sub" style="margin:4px 0 0">Preço, Mín 52s e Máx 52s em R$ (mínima e '
            'máxima de 52 semanas). vs Min52 = distância da mínima de 52 semanas; vs MM100 = '
            'posição vs média de 100 dias. <span style="color:#16a34a">Verde/+</span> acima, '
-           '<span style="color:#dc2626">vermelho/−</span> abaixo. Beta e correlação vs '
-           'Ibovespa (retornos diários, ~1 ano; <span style="color:#16a34a">+</span> na '
-           'mesma direção do índice, <span style="color:#dc2626">−</span> na direção '
-           'oposta). P/C opç. = Put/Call ratio do ativo (volume de puts ÷ calls no pregão, '
-           'COTAHIST/B3): <span style="color:#dc2626">≥1,2</span> viés baixista, '
-           '<span style="color:#16a34a">≤0,8</span> altista. Aluguel = % das ações em '
+           '<span style="color:#dc2626">vermelho/−</span> abaixo. Beta vs Ibovespa (retornos '
+           'diários, ~1 ano) — correlação com o Ibovespa e com o dólar estão na tabela '
+           '"Estatísticas do ano", logo abaixo. P/C opç. = Put/Call ratio do ativo (volume de '
+           'puts ÷ calls no pregão, COTAHIST/B3): <span style="color:#dc2626">≥1,2</span> viés '
+           'baixista, <span style="color:#16a34a">≤0,8</span> altista. Aluguel = % das ações em '
            'circulação em posição de aluguel em aberto (BDI/B3), proxy de pressão vendedora: '
            '<span style="color:#dc2626">≥5%</span> alta, <span style="color:#b45309">2–5%</span> '
            'moderada. Maior OI = opção com maior posição em aberto do ativo (tipo + strike, OI '
