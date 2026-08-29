@@ -41,7 +41,7 @@ MAX_DAYS_BEFORE_WINDOW_PIVOT = 15
 MIN_DAYS_BEFORE_WINDOW_BREAKOUT = 7
 MAX_DAYS_BEFORE_WINDOW_BREAKOUT = 15
 
-__build__ = "2026-08-28-fundoduplo-calibrado-tol4-sep60-zone45"   # marcador de versão (aparece no log)
+__build__ = "2026-08-28b-candidato-preconf+virada-goldencross"   # marcador de versão (aparece no log)
 
 EM_ALTA_STR = "Em Alta"
 EM_BAIXA_STR = "Em Baixa"
@@ -69,6 +69,9 @@ class BreakoutResult:
     sma50_gt_sma200: bool = False
     days_since_breakout: int = -1
     note: str = ""
+    candidato_padrao: str = ""       # 'Fundo duplo' / 'Fundo triplo' — estrutura ok, falta confirmar
+    candidato_nota: str = ""         # detalhe do candidato (pescoço, distância)
+    virada_alta: bool = False        # tendência virou de Em Baixa p/ Em Alta no ÚLTIMO pregão
 
     def as_dict(self):
         return asdict(self)
@@ -252,11 +255,11 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.04,
         (≤ max_ext acima do pescoço)."""
     close = df["Close"].iloc[-lookback:]
     if len(close) < 40:
-        return None
+        return None, None
     offset = len(df) - len(close)
     mins = _local_minima(close, order)
     if len(mins) < 2:
-        return None
+        return None, None
     cur = float(close.iloc[-1])
     lo_janela = float(close.min())                       # mínima do período
     teto_zona = lo_janela * (1 + low_zone)               # topo da "zona de fundo"
@@ -269,6 +272,8 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.04,
         _dbg(f"{len(mins)} mínimos locais em R$: " +
              ", ".join(f"{float(close.iloc[i]):.2f}(idx{i})" for i in mins) +
              f" | zona de fundo ≤ R${teto_zona:.2f} (mín R${lo_janela:.2f} +{low_zone*100:.0f}%)")
+
+    candidato = None                                       # melhor "quase lá" (estrutura ok)
 
     for b in range(len(mins) - 1, 0, -1):
         for a in range(b - 1, -1, -1):
@@ -295,38 +300,44 @@ def detect_double_bottom(df, lookback: int = 120, tol: float = 0.04,
                 _dbg(f"par R${p1:.2f}/R${p2:.2f}: pescoço R${peak:.2f} baixo demais "
                      f"({(peak/base-1)*100:.1f}% < {neckline_min*100:.0f}%) — descartado")
                 continue
+            rev = _reversal_context(df, offset + i1, base, lookback, drop_min)
+            if not rev:
+                continue                                   # exige baixa + queda antes (piso)
+            # A VIRADA TEM QUE SER O EVENTO: no SEGUNDO FUNDO a tendência ainda não podia ser
+            # "Em Alta" (senão a reversão já é antiga/histórica).
+            if exigir_virada:
+                abs_i2 = offset + i2
+                pre_i2 = df.iloc[:abs_i2 + 1]
+                if len(pre_i2) >= 40 and is_uptrend(pre_i2) == EM_ALTA_STR:
+                    continue
+            # Daqui em diante, a ESTRUTURA já é válida (W real + contexto de reversão) — vira
+            # candidato "pré-confirmação" mesmo que ainda não tenha confirmado o rompimento.
+            ext_atual = cur / peak - 1
+            if candidato is None or i2 > candidato["_i2"]:  # prioriza o par mais recente
+                candidato = {"neckline": peak, "base": base, "ext_atual": ext_atual, "_i2": i2}
+
             confirma = cur > peak and float(close.iloc[i2:].min()) >= base * (1 - tol)
             after = close.iloc[i2:]
             broke_idx = next((i2 + j for j in range(len(after))
                               if float(after.iloc[j]) > peak), None)
             bars_since = (len(close) - 1 - broke_idx) if broke_idx is not None else None
             ext = cur / peak - 1
-            rev = _reversal_context(df, offset + i1, base, lookback, drop_min)
             _dbg(f"par R${p1:.2f}(idx{i1})/R${p2:.2f}(idx{i2}) pescoço R${peak:.2f} | "
                  f"confirma_rompimento={confirma} | rompeu há {bars_since} pregões "
                  f"(máx {max_bars_since}) | extensão {ext*100:+.1f}% (máx {max_ext*100:.0f}%) | "
                  f"reversão(baixa+queda≥{drop_min*100:.0f}%)={rev}")
             if not confirma:
-                continue                                   # confirma rompimento do pescoço
+                continue
             if broke_idx is None or bars_since > max_bars_since:
                 continue                                   # rompeu há muito tempo
             if ext > max_ext:                              # já subiu demais acima do pescoço
                 continue
-            if not rev:
-                continue                                   # exige baixa + queda antes
-            # A VIRADA TEM QUE SER O EVENTO: no SEGUNDO FUNDO (antes do repique final) a
-            # tendência ainda não podia ser "Em Alta". Se já era, a reversão ocorreu antes e
-            # este "W" é histórico — o papel está em alta madura, não virando agora.
-            if exigir_virada:
-                abs_i2 = offset + i2
-                pre_i2 = df.iloc[:abs_i2 + 1]              # dados até o 2º fundo
-                if len(pre_i2) >= 40 and is_uptrend(pre_i2) == EM_ALTA_STR:
-                    _dbg(f"descartado: no 2º fundo (idx{i2}) a tendência JÁ era 'Em Alta' — "
-                         f"reversão antiga, não é sinal de virada")
-                    continue
             _dbg(f">>> FUNDO DUPLO CONFIRMADO: pescoço R${peak:.2f}, base R${base:.2f}")
-            return {"neckline": peak, "base": base}
-    return None
+            candidato.pop("_i2", None)
+            return {"neckline": peak, "base": base}, candidato
+    if candidato:
+        candidato.pop("_i2", None)
+    return None, candidato
 
 
 def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.04,
@@ -340,38 +351,40 @@ def detect_triple_bottom(df, lookback: int = 160, tol: float = 0.04,
     Fundos consecutivos entre min_sep e max_sep pregões (nem colados, nem distantes demais)."""
     close = df["Close"].iloc[-lookback:]
     if len(close) < 60:
-        return None
+        return None, None
     offset = len(df) - len(close)
     mins = _local_minima(close, order)
     if len(mins) < 3:
-        return None
+        return None, None
     cur = float(close.iloc[-1])
     i1, i2, i3 = mins[-3], mins[-2], mins[-1]
     if (i2 - i1) < min_sep or (i3 - i2) < min_sep:
-        return None
+        return None, None
     if (i2 - i1) > max_sep or (i3 - i2) > max_sep:        # fundos distantes demais -> não é padrão
-        return None
+        return None, None
     ps = [float(close.iloc[i]) for i in (i1, i2, i3)]
     base = min(ps)
-    if (max(ps) - base) / base > tol:                     # três fundos alinhados (≤2%)
-        return None
+    if (max(ps) - base) / base > tol:                     # três fundos alinhados
+        return None, None
     if max(ps) > float(close.min()) * (1 + low_zone):     # algum vale fora da zona de fundo
-        return None
+        return None, None
     resist = float(close.iloc[i1:i3 + 1].max())
     if resist / base - 1 < neckline_min:
-        return None
+        return None, None
+    if not _reversal_context(df, offset + i1, base, lookback, drop_min):
+        return None, None
+    # estrutura válida -> vira candidato mesmo sem confirmar ainda
+    candidato = {"neckline": resist, "base": base, "ext_atual": cur / resist - 1}
     if cur <= resist:
-        return None
+        return None, candidato
     after = close.iloc[i3:]                                # rompimento recente e não esticado
     broke_idx = next((i3 + j for j in range(len(after))
                       if float(after.iloc[j]) > resist), None)
     if broke_idx is None or (len(close) - 1 - broke_idx) > max_bars_since:
-        return None
+        return None, candidato
     if cur / resist - 1 > max_ext:
-        return None
-    if not _reversal_context(df, offset + i1, base, lookback, drop_min):
-        return None
-    return {"neckline": resist, "base": base}
+        return None, candidato
+    return {"neckline": resist, "base": base}, candidato
 
 
 def _reversal_context(df, abs_i1: int, base: float, lookback: int,
@@ -569,6 +582,20 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
         pass
 
     res.trend = is_uptrend(df, longo=trend_ma_long)
+    # VIRADA DE TENDÊNCIA: cruzamento de médias no ÚLTIMO pregão (MM21 cruza a MM30 de baixo
+    # p/ cima — "golden cross"). Testamos exigir a classificação plena "Em Baixa"->"Em Alta"
+    # num só candle, mas isso é matematicamente quase impossível (as duas médias concordantes
+    # + preço acima da MM30 raramente viram tudo de uma vez — a transição real passa por
+    # "Lateral" por vários dias). O cruzamento de médias é o evento correto de UM pregão.
+    try:
+        if len(df) >= trend_ma_long + 2:
+            mmc = close.rolling(21).mean()
+            mml = close.rolling(trend_ma_long).mean()
+            if pd.notna(mmc.iloc[-1]) and pd.notna(mml.iloc[-1]) and \
+               pd.notna(mmc.iloc[-2]) and pd.notna(mml.iloc[-2]):
+                res.virada_alta = bool(mmc.iloc[-2] <= mml.iloc[-2] and mmc.iloc[-1] > mml.iloc[-1])
+    except Exception:
+        pass
     sma50 = _sma(close, 50).iloc[-1]
     sma200 = _sma(close, 200).iloc[-1]
     res.above_sma200 = bool(pd.notna(sma200) and res.close > sma200)
@@ -655,11 +682,11 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
         # padrões adicionais (candidatos), só fora de tendência de baixa
         _pdbg = os.getenv("PATTERN_DEBUG", "").upper() == str(ticker or "").upper() \
             and bool(os.getenv("PATTERN_DEBUG"))
-        db = detect_double_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep,
-                                  low_zone=pattern_low_zone,
-                                  exigir_virada=pattern_exigir_virada,
-                                  debug=_pdbg, ticker=ticker)
-        tb = detect_triple_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep)
+        db, db_cand = detect_double_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep,
+                                           low_zone=pattern_low_zone,
+                                           exigir_virada=pattern_exigir_virada,
+                                           debug=_pdbg, ticker=ticker)
+        tb, tb_cand = detect_triple_bottom(df, max_ext=pattern_max_ext, max_sep=pattern_max_sep)
         ch = detect_cup_handle(df, max_ext=flag_max_ext, debug=_pdbg, ticker=ticker)
         bf = detect_bull_flag(df, max_ext=flag_max_ext, flag_min=flag_min_dias,
                               pole_min=flag_pole_min, flag_min_retrace=flag_min_retrace)
@@ -679,6 +706,23 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
                         f"recuo {bf['flag_retrace']:.0f}%, bandeira {bf['flag_dias']}d "
                         f"(candidato)")
         else:
+            # nenhum padrão CONFIRMADO — mas pode haver um CANDIDATO pré-confirmação
+            # (estrutura de W/triplo válida, só falta confirmar/segurar o rompimento do pescoço)
+            melhor = None
+            if tb_cand and db_cand:
+                melhor = ("Fundo triplo", tb_cand) if tb_cand["ext_atual"] >= db_cand["ext_atual"] \
+                    else ("Fundo duplo", db_cand)
+            elif tb_cand:
+                melhor = ("Fundo triplo", tb_cand)
+            elif db_cand:
+                melhor = ("Fundo duplo", db_cand)
+            if melhor:
+                nome, c = melhor
+                res.candidato_padrao = nome
+                sinal_ext = "abaixo" if c["ext_atual"] < 0 else "acima"
+                res.candidato_nota = (f"{nome} (pré-confirmação) — pescoço R${c['neckline']:.2f}, "
+                                      f"preço {abs(c['ext_atual'])*100:.1f}% {sinal_ext} do "
+                                      f"pescoço; falta fechar acima e segurar")
             res.note = f"sem sinal ({res.trend})"
     else:
         motivos = []
@@ -691,4 +735,7 @@ def detect_breakout(df: pd.DataFrame, ticker: str = "",
             motivos.append(f"sem novo topo ({res.pct_to_level:+.1f}%)")
         res.note = f"sem sinal ({res.trend}" + (
             "; " + ", ".join(motivos) if motivos else "") + ")"
+    if res.virada_alta:
+        res.note = (res.note + " · ⚡ cruzamento de médias (MM21>MM30) hoje"
+                    if res.note else "⚡ cruzamento de médias (MM21>MM30) hoje")
     return res

@@ -151,6 +151,18 @@ def _fmt_row(r) -> str:
         flag = strat if (r.get("breakout") and strat) else "Não"
     cls = "romp" if "Romp" in flag else ("piv" if "Piv" in flag else "nao")
     tag = f'<span class="tag {cls}">{flag}</span>'
+    # candidato pré-confirmação e virada de tendência: badges extras (só quando NÃO há sinal
+    # confirmado — senão o rompimento/pivô/padrão já é a informação principal)
+    extra_tags = []
+    if flag == "Não":
+        cand = str(r.get("candidato_padrao", "") or "")
+        if cand:
+            cand_nota = str(r.get("candidato_nota", "") or cand)
+            extra_tags.append(f'<span class="tag pad" title="{cand_nota}">{cand} (quase)</span>')
+        if r.get("virada_alta"):
+            extra_tags.append('<span class="tag romp">Virada p/ Alta</span>')
+    if extra_tags:
+        tag = tag + "<br>" + " ".join(extra_tags)
     def num(x, d=1):
         try:
             return f"{float(x):.{d}f}"
