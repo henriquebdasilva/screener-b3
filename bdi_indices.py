@@ -119,7 +119,7 @@ def parse_ifix(texto=None, linhas=None) -> dict | None:
         out = {}
         if "Fechamento" in flat:
             i = flat.index("Fechamento")
-            out["fechamento"] = _num_pts(flat[i + 1]) if i + 1 < len(flat) else None
+            out["fechamento"] = _num_br(flat[i + 1]) if i + 1 < len(flat) else None
         # percentuais: procura 'Do', 'dia', '%', ... ancorado por 'No' 'mês' e 'No' 'ano'
         try:
             j = flat.index("Do")
@@ -128,7 +128,7 @@ def parse_ifix(texto=None, linhas=None) -> dict | None:
                 for k in range(len(flat) - len(chave_seq)):
                     if flat[k:k + len(chave_seq)] == chave_seq:
                         val = flat[k + len(chave_seq)]
-                        return _num_pct(val.replace("%", ""))
+                        return _num_br(val.replace("%", ""))
                 return None
             out["var_dia_pct"] = pct_apos(["Do", "dia"])
             out["var_mes_pct"] = pct_apos(["No", "mês"])
@@ -140,13 +140,13 @@ def parse_ifix(texto=None, linhas=None) -> dict | None:
         m = re.search(r"IFIX\s*\n?Comportamento no Dia.*?Fechamento\s+([\d.,]+)", texto, re.S)
         if not m:
             return None
-        out = {"fechamento": _num_pts(m.group(1))}
-        m2 = re.search(r"IFIX\s*\(%\)\s*Do dia\s+([\-\d.]+)%.*?No mês\s+([\-\d.]+)%"
-                       r".*?No ano\s+([\-\d.]+)%", texto, re.S)
+        out = {"fechamento": _num_br(m.group(1))}
+        m2 = re.search(r"IFIX\s*\(%\)\s*Do dia\s+([\-\d,\.]+)%.*?No mês\s+([\-\d,\.]+)%"
+                       r".*?No ano\s+([\-\d,\.]+)%", texto, re.S)
         if m2:
-            out["var_dia_pct"] = _num_pct(m2.group(1))
-            out["var_mes_pct"] = _num_pct(m2.group(2))
-            out["var_ano_pct"] = _num_pct(m2.group(3))
+            out["var_dia_pct"] = _num_br(m2.group(1))
+            out["var_mes_pct"] = _num_br(m2.group(2))
+            out["var_ano_pct"] = _num_br(m2.group(3))
         return out if out["fechamento"] is not None else None
     return None
 
