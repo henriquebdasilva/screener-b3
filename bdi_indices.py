@@ -19,6 +19,8 @@ import os
 import re
 from urllib.request import Request, urlopen
 
+__build__ = "2026-08-30b-validado-com-pdf-real-usuario"   # marcador de versão (aparece no log)
+
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
     d = dataobj
@@ -79,7 +81,7 @@ def _pdf_lines(fonte):
     return linhas
 
 
-def _achar_bloco_indice(linhas, nome_indice: str, largura_col: float = 200):
+def _achar_bloco_indice(linhas, nome_indice: str, largura_col: float = 265):
     """Localiza o bloco 'Comportamento no Dia' de um índice específico (ex.: 'IFIX'). Como até
     3 painéis de índice dividem a MESMA linha (y) lado a lado, o título pode estar em QUALQUER
     posição da linha — buscamos por texto em qualquer x, pegamos a coordenada dele, e usamos
@@ -222,11 +224,15 @@ def fetch_ifix() -> dict | None:
     """IFIX (fechamento + variações) via BDI. Tenta primeiro por COORDENADAS (robusto a
     layout de colunas lado a lado), cai para texto corrido, depois desiste. None se
     indisponível — nunca inventa. Ative BDI_DEBUG=1 para logar um trecho em caso de falha."""
+    print(f"[bdi_indices] build: {__build__}")
     if os.getenv("BDI_INDICES", "1") == "0":
         return None
     raw, texto, d = _fetch_bdi02()
     if not raw:
-        print("[bdi_indices] IFIX: não consegui baixar o BDI_02.")
+        print(f"[bdi_indices] IFIX: não consegui baixar o BDI_02 (tentei "
+              f"{dt.date.today()} e {dt.date.today() - dt.timedelta(days=1)}, entre outras "
+              f"datas recentes). Verifique se a URL abre no navegador: "
+              f"{_bdi_pdf_url(dt.date.today())}")
         return None
     ifix = None
     try:
