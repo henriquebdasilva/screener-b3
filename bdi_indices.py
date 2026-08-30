@@ -19,7 +19,7 @@ import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-08-30b-validado-com-pdf-real-usuario"   # marcador de versão (aparece no log)
+__build__ = "2026-08-30c-fluxo-escala-corrigida-mil-para-mi"   # marcador de versão (aparece no log)
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -156,7 +156,10 @@ def parse_ifix(texto=None, linhas=None) -> dict | None:
 def parse_fluxo_acumulado(texto=None, linhas=None) -> dict | None:
     """Extrai 'Participação dos Investidores' (compras/vendas ACUMULADAS do mês) do
     Investidor Estrangeiro. Aceita `linhas` (coordenadas, formato (pi,y,[(x,texto),...]) de
-    _pdf_lines) ou `texto` corrido."""
+    _pdf_lines) ou `texto` corrido. O BDI publica a coluna em 'R$ MIL' — convertemos para
+    R$ MILHÕES aqui (÷1000) para bater com o rótulo 'R$ mi' usado no relatório; sem essa
+    conversão o valor aparecia 1000x maior do que deveria (ex.: '-18.697.049 R$ mi' em vez de
+    '-18.697 R$ mi', quando na real R$ mil já é o valor bruto, ~R$18,7 bi)."""
     if linhas:
         for _, _, cells_xy in linhas:
             cells = [t for _, t in cells_xy] if cells_xy and isinstance(cells_xy[0], tuple) \
@@ -168,6 +171,7 @@ def parse_fluxo_acumulado(texto=None, linhas=None) -> dict | None:
                     # layout: Compras | Participação% | Vendas | Participação%
                     if len(nums) >= 3:
                         compras, vendas = nums[0], nums[2]
+                    compras, vendas = compras / 1000.0, vendas / 1000.0    # R$ mil -> R$ mi
                     return {"compras_acum_mes": compras, "vendas_acum_mes": vendas,
                             "saldo_acum_mes": compras - vendas, "data_base": None}
         return None
@@ -179,6 +183,7 @@ def parse_fluxo_acumulado(texto=None, linhas=None) -> dict | None:
         compras, vendas = _num_br(m.group(1)), _num_br(m.group(3))
         if compras is None or vendas is None:
             return None
+        compras, vendas = compras / 1000.0, vendas / 1000.0                # R$ mil -> R$ mi
         dm = re.search(r"até o dia (\d{2}/\d{2}/\d{4})", texto)
         data_base = None
         if dm:
