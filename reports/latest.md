@@ -1,4 +1,4 @@
-# Screener B3 — 2026-08-29
+# Screener B3 — 2026-08-30
 
 *Parâmetros:* `{'universe': 'both', 'top_quantile': 0.5, 'min_invest': None, 'lookback': 20, 'vol_mult': 1.5, 'require_contraction': False}`
 
