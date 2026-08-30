@@ -62,40 +62,49 @@ def _num_pct(s):
 def _pdf_lines(fonte):
     """Reconstrói as linhas do PDF por coordenadas (x,y), como em posicoes.py/opcoes.py — o
     texto corrido (get_text() simples) intercala colunas lado a lado (ex.: os 3 painéis
-    'Comportamento no Dia' da mesma linha), o que quebra regex sobre texto puro."""
+    'Comportamento no Dia' da mesma linha), o que quebra regex sobre texto puro.
+    Mantém (x, texto) — não só o texto — porque vários índices dividem a MESMA linha (y),
+    lado a lado; sem o x não dá pra saber qual coluna pertence a qual índice."""
     import pymupdf
     from collections import defaultdict
     doc = pymupdf.open(stream=fonte, filetype="pdf") if isinstance(fonte, (bytes, bytearray)) \
         else pymupdf.open(fonte)
-    linhas = []                      # lista de (pagina, y, [(x, texto), ...])
+    linhas = []                      # lista de (pagina, y, [(x, texto), ...]) — ORDENADO por x
     for pi, page in enumerate(doc):
         L = defaultdict(list)
         for w in page.get_text("words"):                 # (x0,y0,x1,y1,texto,...)
             L[round(w[1] / 2) * 2].append((w[0], w[4]))
         for y in sorted(L):
-            linhas.append((pi, y, [t for _, t in sorted(L[y])]))
+            linhas.append((pi, y, sorted(L[y])))          # mantém (x, texto)
     return linhas
 
 
 def _achar_bloco_indice(linhas, nome_indice: str, largura_col: float = 200):
-    """Localiza o bloco 'Comportamento no Dia' de um índice específico (ex.: 'IFIX') pela
-    coluna (x) do título, e devolve as linhas seguintes dentro da mesma faixa de x — evita
-    pegar o Fechamento/percentuais de um índice vizinho na mesma linha."""
-    import pymupdf
+    """Localiza o bloco 'Comportamento no Dia' de um índice específico (ex.: 'IFIX'). Como até
+    3 painéis de índice dividem a MESMA linha (y) lado a lado, o título pode estar em QUALQUER
+    posição da linha — buscamos por texto em qualquer x, pegamos a coordenada dele, e usamos
+    essa faixa de x para filtrar SÓ os tokens daquela coluna nas linhas seguintes (evita pegar
+    o Fechamento/percentuais de um índice vizinho que compartilha a mesma linha)."""
     x_titulo = None
     idx_titulo = None
     for i, (pi, y, cells) in enumerate(linhas):
-        if cells and cells[0].strip() == nome_indice:
-            # confirma que é título de bloco (seguido de 'Comportamento' em poucas linhas)
-            seguinte = " ".join(c for _, _, cs in linhas[i:i + 3] for c in cs)
-            if "Comportamento" in seguinte or "Pontos" in seguinte:
-                idx_titulo = i
-                break
-    if idx_titulo is None:
+        for x, t in cells:
+            if t.strip() == nome_indice:
+                seguinte = " ".join(t2 for _, _, cs in linhas[i:i + 3] for _, t2 in cs)
+                if "Comportamento" in seguinte or "Pontos" in seguinte:
+                    idx_titulo, x_titulo = i, x
+                    break
+        if idx_titulo is not None:
+            break
+    if idx_titulo is None or x_titulo is None:
         return []
-    # x do título define a coluna; pega as próximas ~20 linhas cujo primeiro token começa
-    # perto dessa coluna (tolerância generosa, já que colunas têm ~200-250pt de largura)
-    return linhas[idx_titulo:idx_titulo + 25]
+    x_lo, x_hi = x_titulo - 15, x_titulo + largura_col
+    out = []
+    for pi, y, cells in linhas[idx_titulo:idx_titulo + 30]:
+        filtrado = [t for x, t in cells if x_lo <= x <= x_hi]
+        if filtrado:
+            out.append((pi, y, filtrado))
+    return out
 
 
 def parse_ifix(texto=None, linhas=None) -> dict | None:
@@ -144,9 +153,12 @@ def parse_ifix(texto=None, linhas=None) -> dict | None:
 
 def parse_fluxo_acumulado(texto=None, linhas=None) -> dict | None:
     """Extrai 'Participação dos Investidores' (compras/vendas ACUMULADAS do mês) do
-    Investidor Estrangeiro. Aceita `linhas` (coordenadas) ou `texto` corrido."""
+    Investidor Estrangeiro. Aceita `linhas` (coordenadas, formato (pi,y,[(x,texto),...]) de
+    _pdf_lines) ou `texto` corrido."""
     if linhas:
-        for _, _, cells in linhas:
+        for _, _, cells_xy in linhas:
+            cells = [t for _, t in cells_xy] if cells_xy and isinstance(cells_xy[0], tuple) \
+                else cells_xy                             # aceita bruto (x,t) ou já-texto
             if len(cells) >= 2 and cells[0] == "Investidor" and cells[1] == "Estrangeiro":
                 nums = [_num_br(c) for c in cells[2:] if _num_br(c) is not None]
                 if len(nums) >= 2:
