@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import math
 
-# Proxies negociáveis/índices no yfinance. IFIX usa IFIX.SA (não ^IFIX, que não existe no Yahoo).
+# Proxies negociáveis/índices no yfinance. IFIX NÃO entra aqui — o Resumo de mercado já mostra
+# o IFIX numa linha própria, vindo do BDI (bdi_indices.fetch_ifix, mais confiável que o
+# yfinance para esse índice). Tê-lo nos dois lugares duplicava a linha no relatório.
 INDEX_SYMS = {
     "Ibovespa": "^BVSP",
     "Small Caps (SMAL11)": "SMAL11.SA",
-    "IFIX": "IFIX.SA",   # Yahoo trata o IFIX como papel comum (IFIX.SA), não como índice (^IFIX)
 }
 
 
