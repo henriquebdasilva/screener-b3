@@ -2,6 +2,7 @@
 # Se a instalação falhar no runner, o app cai automaticamente no yfinance.
 fundamentus>=0.2.0 ; python_version >= "3.8"
 lxml>=4.9
+matplotlib>=3.7
 numpy>=1.24
 openpyxl>=3.1
 pandas>=2.0

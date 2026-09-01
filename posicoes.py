@@ -201,6 +201,31 @@ def oi_ratios(posicoes: list, ticker_setor: dict = None, ticker_grupo: dict = No
             "por_grupo": por_grupo, "maior_oi": maior_oi}
 
 
+def top_oi(posicoes: list, n: int = 10) -> list:
+    """Ranking GERAL das N séries de opções com MAIOR posição em aberto (open interest) do
+    dia — para o bloco 'Opções — top por posições em aberto' do relatório (equivalente ao
+    top_negociadas do opcoes.py, mas por OI em vez de volume). Strike não vem resolvido aqui
+    (o parser bruto do OI não carrega strike limpo) — use `resolver_strikes_lista` depois."""
+    top = sorted(posicoes, key=lambda p: -p.get("oi", 0))[:n]
+    return [{"code": p["ticker"], "base": p["raiz"], "tipo": p["tipo"], "oi": p["oi"]}
+            for p in top]
+
+
+def resolver_strikes_lista(lista: list, strike_map: dict = None, spot: dict = None) -> list:
+    """Enriquece uma lista de {'code','base',...} com 'strike': usa o strike LIMPO do
+    COTAHIST (strike_map por código) e cai para a estimativa do código quando não houver.
+    Mesma lógica de `resolver_destaques_oi`, mas para uma LISTA (ranking) em vez de 1 por raiz."""
+    strike_map = strike_map or {}
+    spot = spot or {}
+    out = []
+    for d in lista:
+        st = strike_map.get(d["code"])
+        if st is None:
+            st = strike_do_codigo(d["code"], spot.get(d.get("base")))
+        out.append({**d, "strike": st})
+    return out
+
+
 def _parse_oi_json(texto: str, underlying_roots=None):
     """Parser flexível para JSON do BDI novo (arquivos.b3.com.br/bdi/tabelas). Procura, em
     qualquer lista de registros, os campos de código do instrumento e de posição em aberto."""
@@ -427,6 +452,7 @@ def fetch_open_interest(ticker_setor: dict = None, ticker_grupo: dict = None) ->
         r = oi_ratios(posicoes, ticker_setor, ticker_grupo=ticker_grupo)
         r["n_series"] = len(posicoes)
         r["data"] = d
+        r["top_oi"] = top_oi(posicoes, n=10)
         pc = r["mercado"]["oi_ratio"]
         print(f"[oi] {url.split('/')[-1]}: {len(posicoes)} séries de opções; "
               f"OI Put/Call mercado=" + (f"{pc:.2f}" if not math.isnan(pc) else "n/d"))

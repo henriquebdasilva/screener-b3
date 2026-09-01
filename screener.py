@@ -37,7 +37,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         pattern_max_ext=0.10,
         flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05, trend_ma_long=30,
         pattern_max_sep=60, pattern_low_zone=0.045, no_pattern_virada=False,
-        historico_janela=7,
+        historico_janela=15,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
@@ -608,9 +608,12 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                     opcoes_data["oi"] = oi_data      # anexa o open interest ao pacote de opções
                     # resolve o strike do maior OI cruzando com o strike limpo do COTAHIST
                     try:
-                        from posicoes import resolver_destaques_oi
+                        from posicoes import resolver_destaques_oi, resolver_strikes_lista
                         opcoes_data["destaque_oi"] = resolver_destaques_oi(
                             oi_data.get("maior_oi"), opcoes_data.get("strike_map"),
+                            opcoes_data.get("spot"))
+                        oi_data["top_oi"] = resolver_strikes_lista(
+                            oi_data.get("top_oi") or [], opcoes_data.get("strike_map"),
                             opcoes_data.get("spot"))
                     except Exception as e:
                         print(f"[oi] strike do destaque: {e}")
@@ -818,11 +821,11 @@ def parse_args():
     p.add_argument("--no-pattern-virada", action="store_true",
                    help="desliga a exigência de que o fundo duplo represente a VIRADA "
                         "(por padrão, no 2º fundo a tendência não podia já ser de alta)")
-    p.add_argument("--historico-janela", type=int, default=7,
+    p.add_argument("--historico-janela", type=int, default=15,
                    help="nº de pregões no gráfico de evolução (fluxo estrangeiro + OI "
                         "Put/Call do mercado). Se o cache salvo no git tiver menos dias que "
                         "isso, busca RETROATIVAMENTE nos BDIs dos últimos pregões p/ "
-                        "preencher de uma vez (default 7)")
+                        "preencher de uma vez (default 15)")
     p.add_argument("--pattern-max-sep", type=int, default=60,
                    help="separação MÁXIMA (pregões) entre os fundos de um fundo duplo/triplo "
                         "(default 60; evita casar vales distantes que não formam um W)")

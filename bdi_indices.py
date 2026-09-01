@@ -20,7 +20,7 @@ import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-09-01f-busca-retroativa-janela-configuravel"   # marcador de versão (aparece no log)
+__build__ = "2026-09-01g-janela15-graficos-matplotlib"   # marcador de versão (aparece no log)
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -378,8 +378,8 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
 
 
 def atualizar_historico_bdi(fluxo_dia=None, fluxo_acum_mes=None, oi_pc_mercado=None,
-                            data_ref=None, cache_path: str = None, manter: int = 7) -> list:
-    """Mantém um histórico ROLANTE dos últimos `manter` BDIs (default 7) com o fluxo
+                            data_ref=None, cache_path: str = None, manter: int = 15) -> list:
+    """Mantém um histórico ROLANTE dos últimos `manter` BDIs (default 15) com o fluxo
     estrangeiro do dia e o Put/Call de posições em aberto (open interest) do mercado — para o
     gráfico de evolução. Cada execução grava/atualiza a entrada do dia corrente (idempotente:
     rodar de novo no mesmo dia sobrescreve, não duplica). Retorna a lista ordenada por data
@@ -452,7 +452,7 @@ def _fetch_bdi_data_especifica(d, capitulo: str = "02", min_chars: int = 20000,
         return None, None
 
 
-def preencher_historico_retroativo(janela: int = 7, cache_path: str = None,
+def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
                                    max_calendario: int = 21,
                                    ticker_setor: dict = None) -> list:
     """Busca RETROATIVAMENTE, nos últimos `janela` pregões, o fluxo estrangeiro diário (via
