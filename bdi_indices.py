@@ -19,7 +19,7 @@ import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-08-30c-fluxo-escala-corrigida-mil-para-mi"   # marcador de versão (aparece no log)
+__build__ = "2026-08-31-historico-7-bdis-grafico"   # marcador de versão (aparece no log)
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -319,3 +319,43 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
               f"só acumulado do mês (R$ {resultado['acum_mes']:+,.0f} mi). "
               f"Amanhã já calcula o valor diário.")
     return resultado
+
+
+def atualizar_historico_bdi(fluxo_dia=None, fluxo_acum_mes=None, oi_pc_mercado=None,
+                            data_ref=None, cache_path: str = None, manter: int = 7) -> list:
+    """Mantém um histórico ROLANTE dos últimos `manter` BDIs (default 7) com o fluxo
+    estrangeiro do dia e o Put/Call de posições em aberto (open interest) do mercado — para o
+    gráfico de evolução. Cada execução grava/atualiza a entrada do dia corrente (idempotente:
+    rodar de novo no mesmo dia sobrescreve, não duplica). Retorna a lista ordenada por data
+    (mais antiga primeiro). Cache persiste via os relatórios versionados no repo (mesmo
+    mecanismo do cache de fluxo — env HIST_BDI_PATH, default 'reports/.historico_bdi.json')."""
+    cache_path = cache_path or os.getenv("HIST_BDI_PATH", "reports/.historico_bdi.json")
+    hist = []
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            hist = json.load(f).get("dias", [])
+    except Exception:
+        pass
+    data_ref = data_ref or dt.date.today()
+    ds = data_ref.isoformat() if hasattr(data_ref, "isoformat") else str(data_ref)
+    hist = [d for d in hist if d.get("data") != ds]        # remove duplicata do mesmo dia
+    novo = {"data": ds}
+    if fluxo_dia is not None:
+        novo["fluxo_dia"] = fluxo_dia
+    if fluxo_acum_mes is not None:
+        novo["fluxo_acum_mes"] = fluxo_acum_mes
+    if oi_pc_mercado is not None:
+        novo["oi_pc_mercado"] = oi_pc_mercado
+    if len(novo) > 1:                                       # só grava se tiver algo além da data
+        hist.append(novo)
+    hist.sort(key=lambda d: d["data"])
+    hist = hist[-manter:]
+    try:
+        os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump({"dias": hist}, f)
+    except Exception as e:
+        print(f"[bdi_indices] histórico: falha ao gravar cache: {e}")
+    print(f"[bdi_indices] histórico: {len(hist)}/{manter} dias no cache "
+          f"({hist[0]['data'] if hist else '—'} a {hist[-1]['data'] if hist else '—'})")
+    return hist

@@ -650,6 +650,19 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             except Exception as e:
                 print(f"[macro] indisponível: {e}")
                 macro_path = None
+            # histórico rolante (7 BDIs) de fluxo estrangeiro + OI Put/Call do mercado, p/
+            # o gráfico de evolução no relatório
+            try:
+                from bdi_indices import atualizar_historico_bdi
+                _fx = (macro_data or {}).get("fluxo_estrangeiro") or {}
+                _oi_merc = ((opcoes_data or {}).get("oi") or {}).get("mercado") or {}
+                hist_bdi = atualizar_historico_bdi(
+                    fluxo_dia=_fx.get("dia"), fluxo_acum_mes=_fx.get("acum_mes") or _fx.get("mes"),
+                    oi_pc_mercado=_oi_merc.get("oi_ratio"), data_ref=_fx.get("data"),
+                    cache_path=f"{outdir}/.historico_bdi.json")
+                macro_data["historico_bdi"] = hist_bdi
+            except Exception as e:
+                print(f"[bdi_indices] histórico: {e}")
             n_graf = int((selecionados["oportunidade_grafica"] != "Não").sum()) \
                 if len(selecionados) else 0
             meta_dict = dict(universe=universe, top_quantile=top_quantile,

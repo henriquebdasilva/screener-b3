@@ -435,6 +435,60 @@ def _aluguel_cell(ticker, row) -> str:
     return f'<span class="sub">{qtd/1e6:.1f}M</span>'      # fallback: milhões de ações
 
 
+def _historico_chart(hist: list) -> str:
+    """Gráfico de evolução (barras HORIZONTAIS) do fluxo estrangeiro diário e do Put/Call de
+    posições em aberto (open interest) do mercado, nos últimos BDIs no cache local (preenche
+    aos poucos: 1 dia no 1º run, até 7 depois de uma semana rodando).
+    NOTA TÉCNICA (xhtml2pdf): uma tabela quebra internamente quando ALGUMAS células têm
+    width% e OUTRAS da mesma coluna (ex.: cabeçalho <th>) não têm — por isso cada linha é uma
+    tabela AUTÔNOMA com largura explícita em TODAS as células (padrão que já funciona no
+    Humor do mercado); nada de <th>/cabeçalho de tabela compartilhado aqui."""
+    if not hist or len(hist) < 2:
+        return ""
+
+    def linha(data, v, cor, txt, pct):
+        barra = (f"<table style='width:180px;border-collapse:collapse'><tr>"
+                f"<td style='width:{pct}%;background:{cor};color:#fff;font-size:10px;"
+                f"font-weight:bold;text-align:center;padding:2px 0'>{txt}</td>"
+                f"<td style='width:{100 - pct}%;padding:0'></td></tr></table>")
+        return (f"<table style='width:100%;margin:2px 0'><tr>"
+                f"<td style='width:50px;font-size:11px;color:#6b7280'>{data}</td>"
+                f"<td style='width:190px'>{barra}</td>"
+                f"<td style='width:70px;text-align:right;font-size:11px'>{txt}</td>"
+                f"</tr></table>")
+
+    fluxos = [d.get("fluxo_dia") for d in hist]
+    vmax = max((abs(v) for v in fluxos if v is not None), default=1.0) or 1.0
+    linhas_fx = []
+    for d in hist:
+        data, v = d.get("data", "")[5:], d.get("fluxo_dia")
+        if v is None:
+            linhas_fx.append(linha(data, None, "#e5e7eb", "n/d", 6))
+        else:
+            pct = min(96, max(6, int(abs(v) / vmax * 100)))
+            cor = "#16a34a" if v >= 0 else "#dc2626"
+            linhas_fx.append(linha(data, v, cor, f"{v:+,.0f}", pct))
+
+    linhas_oi = []
+    for d in hist:
+        data, v = d.get("data", "")[5:], d.get("oi_pc_mercado")
+        if v is None:
+            linhas_oi.append(linha(data, None, "#e5e7eb", "n/d", 6))
+        else:
+            pct = max(10, min(100, int(v / 2.0 * 100)))    # escala 0-2.0 -> 0-100%
+            cor = "#dc2626" if v >= 1.2 else ("#16a34a" if v <= 0.8 else "#94a3b8")
+            linhas_oi.append(linha(data, v, cor, f"{v:.2f}", pct))
+
+    return (_secbar(f"Evolução — últimos {len(hist)} BDIs")
+            + '<p class="sub" style="margin:0 0 8px">Fluxo estrangeiro do dia (R$ mi) e Put/'
+              'Call de posições em aberto (open interest) do mercado, acumulados a cada '
+              'execução do relatório — enche aos poucos até 7 dias.</p>'
+            + '<h3 style="' + _H3 + '">Fluxo estrangeiro (R$ mi/dia)</h3>'
+            + "".join(linhas_fx)
+            + '<h3 style="' + _H3 + '">OI Put/Call (mercado)</h3>'
+            + "".join(linhas_oi))
+
+
 def _mood_block(mood: dict, opcoes: dict = None) -> str:
     if not mood or (not mood.get("indices") and not mood.get("setores")):
         return ""
@@ -833,7 +887,8 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
         ])
     except Exception:
         resumo_kpi = ""
-    topo = resumo_kpi + painel + _market_block(market, macro, opcoes) + _mood_block(mood, opcoes)
+    topo = (resumo_kpi + painel + _market_block(market, macro, opcoes)
+            + _historico_chart((macro or {}).get("historico_bdi")) + _mood_block(mood, opcoes))
     def _suf(g):
         p = group_pct.get(g) if isinstance(group_pct, dict) else group_pct
         return f" ({p}% de maior score)" if p else ""
@@ -994,7 +1049,9 @@ def build_email_body(hoje: str, meta: dict, market: dict, mood: dict, n_sel: int
     corpo = (
         f'<h1>Relatório Quantitativo · Ações B3</h1>'
         f'<p class="sub" style="margin:0 0 14px">{_fmt_date(hoje)}</p>'
-        f'{painel}{_market_block(market, macro, opcoes)}{_mood_block(mood, opcoes)}'
+        f"{painel}{_market_block(market, macro, opcoes)}"
+        f"{_historico_chart((macro or {}).get('historico_bdi'))}"
+        f"{_mood_block(mood, opcoes)}"
         f'<p style="margin:12px 0 6px"><b>{n_sel} papéis</b> passaram no corte '
         f'fundamentalista hoje ({n_graf} com oportunidade gráfica). O detalhamento — '
         f'fundamentos, preço &amp; risco e preços-teto por papel — está no {anexos}, '
