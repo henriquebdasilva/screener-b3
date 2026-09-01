@@ -67,6 +67,9 @@ jobs:
           INSIDER_CHECK: ${{ secrets.INSIDER_CHECK }}
           BASILEIA_DEBUG: ${{ secrets.BASILEIA_DEBUG }}
           PATTERN_DEBUG: ${{ secrets.PATTERN_DEBUG }}
+          BDI_DEBUG: "1"    # DIAGNÓSTICO TEMPORÁRIO: mostra um trecho do texto extraído do BDI
+                            # quando IFIX/fluxo estrangeiro falham ao ser reconhecidos. Pode
+                            # remover depois de resolvido.
         run: |
           python screener.py --universe "$UNIVERSE" \
             --q-bluechip "$QBLUE" --q-smallcap "$QSMALL" --q-defensive "$QDEF" \
