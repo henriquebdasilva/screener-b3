@@ -286,12 +286,22 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
         return None
     data_ref = acc.get("data_base") or d
 
+    cache_abs = os.path.abspath(cache_path)
     cache = {}
+    existia = os.path.exists(cache_path)
     try:
         with open(cache_path, "r", encoding="utf-8") as f:
             cache = json.load(f)
-    except Exception:
-        pass
+        print(f"[bdi_indices] fluxo: cache LIDO de {cache_abs} "
+              f"(último dia salvo: {cache.get('ultimo', {}).get('data', '?')})")
+    except FileNotFoundError:
+        print(f"[bdi_indices] fluxo: cache NÃO EXISTE em {cache_abs} "
+              f"(normal só no 1º dia; se aparecer todo dia, o cache não está persistindo "
+              f"entre execuções — confira se 'reports/.fluxo_cache.json' não está sendo "
+              f"ignorado pelo .gitignore ou pelo passo de commit do workflow)")
+    except Exception as e:
+        print(f"[bdi_indices] fluxo: cache existia ({existia}) mas falhou ao ler "
+              f"{cache_abs}: {e}")
 
     resultado = {"acum_mes": acc["saldo_acum_mes"], "data": data_ref, "dia": None, "mes": None}
     prev = cache.get("ultimo")
@@ -308,6 +318,10 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump({"ultimo": {"data": data_ref.isoformat(),
                                   "acum_mes": acc["saldo_acum_mes"]}}, f)
+        tam = os.path.getsize(cache_path)
+        print(f"[bdi_indices] fluxo: cache GRAVADO em {cache_abs} ({tam} bytes, "
+              f"data={data_ref.isoformat()}) — precisa estar em 'reports/' (ou onde o "
+              f"workflow faz 'git add') para o commit do fim do job pegá-lo")
     except Exception as e:
         print(f"[bdi_indices] fluxo estrangeiro: falha ao gravar cache: {e}")
 
@@ -330,12 +344,18 @@ def atualizar_historico_bdi(fluxo_dia=None, fluxo_acum_mes=None, oi_pc_mercado=N
     (mais antiga primeiro). Cache persiste via os relatórios versionados no repo (mesmo
     mecanismo do cache de fluxo — env HIST_BDI_PATH, default 'reports/.historico_bdi.json')."""
     cache_path = cache_path or os.getenv("HIST_BDI_PATH", "reports/.historico_bdi.json")
+    cache_abs = os.path.abspath(cache_path)
     hist = []
     try:
         with open(cache_path, "r", encoding="utf-8") as f:
             hist = json.load(f).get("dias", [])
-    except Exception:
-        pass
+        print(f"[bdi_indices] histórico: cache LIDO de {cache_abs} ({len(hist)} dias já salvos)")
+    except FileNotFoundError:
+        print(f"[bdi_indices] histórico: cache NÃO EXISTE em {cache_abs} "
+              f"(normal só no 1º dia; se aparecer todo dia, o cache não está persistindo — "
+              f"confira o .gitignore e o passo 'git add reports/' do workflow)")
+    except Exception as e:
+        print(f"[bdi_indices] histórico: falha ao ler {cache_abs}: {e}")
     data_ref = data_ref or dt.date.today()
     ds = data_ref.isoformat() if hasattr(data_ref, "isoformat") else str(data_ref)
     hist = [d for d in hist if d.get("data") != ds]        # remove duplicata do mesmo dia
@@ -348,12 +368,18 @@ def atualizar_historico_bdi(fluxo_dia=None, fluxo_acum_mes=None, oi_pc_mercado=N
         novo["oi_pc_mercado"] = oi_pc_mercado
     if len(novo) > 1:                                       # só grava se tiver algo além da data
         hist.append(novo)
+    else:
+        print(f"[bdi_indices] histórico: nada p/ gravar hoje ({ds}) — fluxo_dia, "
+              f"fluxo_acum_mes e oi_pc_mercado vieram todos None")
     hist.sort(key=lambda d: d["data"])
     hist = hist[-manter:]
     try:
         os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump({"dias": hist}, f)
+        tam = os.path.getsize(cache_path)
+        print(f"[bdi_indices] histórico: cache GRAVADO em {cache_abs} ({tam} bytes, "
+              f"{len(hist)} dias) — precisa estar em 'reports/' p/ o commit do workflow pegá-lo")
     except Exception as e:
         print(f"[bdi_indices] histórico: falha ao gravar cache: {e}")
     print(f"[bdi_indices] histórico: {len(hist)}/{manter} dias no cache "

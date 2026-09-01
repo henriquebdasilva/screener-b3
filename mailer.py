@@ -443,7 +443,7 @@ def _historico_chart(hist: list) -> str:
     width% e OUTRAS da mesma coluna (ex.: cabeçalho <th>) não têm — por isso cada linha é uma
     tabela AUTÔNOMA com largura explícita em TODAS as células (padrão que já funciona no
     Humor do mercado); nada de <th>/cabeçalho de tabela compartilhado aqui."""
-    if not hist or len(hist) < 2:
+    if not hist:
         return ""
 
     def linha(data, v, cor, txt, pct):
