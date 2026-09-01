@@ -19,7 +19,7 @@ import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-08-31-historico-7-bdis-grafico"   # marcador de versão (aparece no log)
+__build__ = "2026-09-01c-diagnostico-completo-data-tamanho"   # marcador de versão (aparece no log)
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -247,11 +247,16 @@ def fetch_ifix() -> dict | None:
     if not ifix:
         ifix = parse_ifix(texto=texto)
     if not ifix:
-        print("[bdi_indices] IFIX: layout não reconhecido no BDI_02 (nem por coordenadas, "
-              "nem por texto).")
+        print(f"[bdi_indices] IFIX: layout não reconhecido no BDI_02 (nem por coordenadas, "
+              f"nem por texto). Arquivo usado: data={d}, {len(raw)} bytes, "
+              f"{len(texto)} caracteres de texto extraído.")
         if os.getenv("BDI_DEBUG", "0") == "1":
             print("[bdi_indices][debug] trecho ao redor de 'IFIX': "
                   + _debug_snippet(texto, "IFIX"))
+            print("[bdi_indices][debug] INÍCIO do texto extraído (800 car.): "
+                  + texto[:800].replace("\n", " | "))
+            print("[bdi_indices][debug] FIM do texto extraído (800 car.): "
+                  + texto[-800:].replace("\n", " | "))
         return None
     ifix["data"] = d
     print(f"[bdi_indices] IFIX {d}: {ifix['fechamento']:.0f} pts "
@@ -279,10 +284,16 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
     if not acc:
         acc = parse_fluxo_acumulado(texto=texto)
     if not acc:
-        print("[bdi_indices] fluxo estrangeiro: layout não reconhecido no BDI_02.")
+        print(f"[bdi_indices] fluxo estrangeiro: layout não reconhecido no BDI_02. "
+              f"Arquivo usado: data={d}, {len(raw)} bytes, "
+              f"{len(texto)} caracteres de texto extraído.")
         if os.getenv("BDI_DEBUG", "0") == "1":
             print("[bdi_indices][debug] trecho ao redor de 'Investidor Estrangeiro': "
                   + _debug_snippet(texto, "Investidor Estrangeiro"))
+            print("[bdi_indices][debug] INÍCIO do texto extraído (800 car.): "
+                  + texto[:800].replace("\n", " | "))
+            print("[bdi_indices][debug] FIM do texto extraído (800 car.): "
+                  + texto[-800:].replace("\n", " | "))
         return None
     data_ref = acc.get("data_base") or d
 
