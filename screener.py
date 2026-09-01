@@ -37,6 +37,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         pattern_max_ext=0.10,
         flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05, trend_ma_long=30,
         pattern_max_sep=60, pattern_low_zone=0.045, no_pattern_virada=False,
+        historico_janela=7,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
@@ -650,16 +651,21 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             except Exception as e:
                 print(f"[macro] indisponível: {e}")
                 macro_path = None
-            # histórico rolante (7 BDIs) de fluxo estrangeiro + OI Put/Call do mercado, p/
-            # o gráfico de evolução no relatório
+            # histórico do fluxo estrangeiro + OI Put/Call, p/ o gráfico de evolução:
+            # (1) busca RETROATIVA nos últimos `historico_janela` pregões — só roda de
+            #     verdade se o cache do git ainda não tiver dias suficientes (1ª vez, ou se
+            #     o cache foi perdido/resetado); senão não baixa nada;
+            # (2) atualização normal do dia corrente, com os dados já buscados nesta execução.
             try:
-                from bdi_indices import atualizar_historico_bdi
+                from bdi_indices import atualizar_historico_bdi, preencher_historico_retroativo
+                preencher_historico_retroativo(janela=historico_janela,
+                                               cache_path=f"{outdir}/.historico_bdi.json")
                 _fx = (macro_data or {}).get("fluxo_estrangeiro") or {}
                 _oi_merc = ((opcoes_data or {}).get("oi") or {}).get("mercado") or {}
                 hist_bdi = atualizar_historico_bdi(
                     fluxo_dia=_fx.get("dia"), fluxo_acum_mes=_fx.get("acum_mes") or _fx.get("mes"),
                     oi_pc_mercado=_oi_merc.get("oi_ratio"), data_ref=_fx.get("data"),
-                    cache_path=f"{outdir}/.historico_bdi.json")
+                    cache_path=f"{outdir}/.historico_bdi.json", manter=historico_janela)
                 macro_data["historico_bdi"] = hist_bdi
             except Exception as e:
                 print(f"[bdi_indices] histórico: {e}")
@@ -812,6 +818,11 @@ def parse_args():
     p.add_argument("--no-pattern-virada", action="store_true",
                    help="desliga a exigência de que o fundo duplo represente a VIRADA "
                         "(por padrão, no 2º fundo a tendência não podia já ser de alta)")
+    p.add_argument("--historico-janela", type=int, default=7,
+                   help="nº de pregões no gráfico de evolução (fluxo estrangeiro + OI "
+                        "Put/Call do mercado). Se o cache salvo no git tiver menos dias que "
+                        "isso, busca RETROATIVAMENTE nos BDIs dos últimos pregões p/ "
+                        "preencher de uma vez (default 7)")
     p.add_argument("--pattern-max-sep", type=int, default=60,
                    help="separação MÁXIMA (pregões) entre os fundos de um fundo duplo/triplo "
                         "(default 60; evita casar vales distantes que não formam um W)")
@@ -926,6 +937,7 @@ if __name__ == "__main__":
         pattern_max_sep=a.pattern_max_sep,
         pattern_low_zone=a.pattern_low_zone,
         no_pattern_virada=a.no_pattern_virada,
+        historico_janela=a.historico_janela,
         dy_years=a.dy_years, use_avg_dy=not a.no_avg_dy,
         bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto,
         teto_outlier_mult=a.teto_outlier_mult,

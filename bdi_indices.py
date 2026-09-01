@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-09-01e-valida-completude-bdi02"   # marcador de versão (aparece no log)
+__build__ = "2026-09-01f-busca-retroativa-janela-configuravel"   # marcador de versão (aparece no log)
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -426,3 +427,137 @@ def atualizar_historico_bdi(fluxo_dia=None, fluxo_acum_mes=None, oi_pc_mercado=N
     print(f"[bdi_indices] histórico: {len(hist)}/{manter} dias no cache "
           f"({hist[0]['data'] if hist else '—'} a {hist[-1]['data'] if hist else '—'})")
     return hist
+
+
+def _fetch_bdi_data_especifica(d, capitulo: str = "02", min_chars: int = 20000,
+                               exigir_marco: bool = True):
+    """Baixa e valida o BDI de uma DATA ESPECÍFICA (sem fallback — usado pela busca
+    retroativa, que já varre as datas ela mesma). Retorna (raw, texto) ou (None, None).
+    `exigir_marco` só faz sentido pro capítulo 02 (Evolução dos índices); os demais
+    capítulos (03-4, 04-2) não têm esse marco, então só validamos o tamanho mínimo."""
+    url = _bdi_pdf_url(d, capitulo)
+    try:
+        req = Request(url, headers={"User-Agent": "Mozilla/5.0 (screener-b3)"})
+        with urlopen(req, timeout=90) as r:
+            raw = r.read()
+        if raw[:4] != b"%PDF":
+            return None, None
+        if capitulo == "02":
+            texto = _pdf_text(bytes(raw))
+            if len(texto) < min_chars or (exigir_marco and "Evolução dos índices" not in texto):
+                return None, None
+            return bytes(raw), texto
+        return bytes(raw), None                          # 03-4/04-2: parser próprio (binário)
+    except Exception:
+        return None, None
+
+
+def preencher_historico_retroativo(janela: int = 7, cache_path: str = None,
+                                   max_calendario: int = 21,
+                                   ticker_setor: dict = None) -> list:
+    """Busca RETROATIVAMENTE, nos últimos `janela` pregões, o fluxo estrangeiro diário (via
+    BDI_02) e o Put/Call de posições em aberto do mercado (via BDI_03-4) — para preencher o
+    gráfico de evolução de uma vez, sem depender de esperar `janela` execuções diárias
+    naturais (útil na 1ª vez rodando, ou se o cache do git foi perdido/resetado).
+
+    Só faz o trabalho pesado (baixa até ~2x`janela` PDFs) se o cache JÁ SALVO tiver MENOS que
+    `janela` dias — senão, não baixa nada e devolve o cache existente sem alteração. Isso evita
+    refazer a busca pesada todo santo dia depois que o histórico natural já se formou.
+
+    O fluxo estrangeiro do BDI é um ACUMULADO DO MÊS (não um valor isolado do dia) — por isso
+    buscamos `janela+1` dias de acumulado e calculamos os deltas dia-a-dia nós mesmos (só
+    dentro do mesmo mês; na virada do mês, aquele ponto fica sem o 'fluxo_dia', só o
+    acumulado). O OI Put/Call já é um retrato do dia (não precisa de dia anterior)."""
+    cache_path = cache_path or os.getenv("HIST_BDI_PATH", "reports/.historico_bdi.json")
+    hist_atual = []
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            hist_atual = json.load(f).get("dias", [])
+    except Exception:
+        pass
+    if len(hist_atual) >= janela:
+        print(f"[bdi_indices] histórico retroativo: já tem {len(hist_atual)}/{janela} dias "
+              f"salvos — sem necessidade de buscar retroativamente.")
+        return hist_atual
+
+    print(f"[bdi_indices] histórico retroativo: só {len(hist_atual)}/{janela} dias salvos — "
+          f"buscando os últimos {janela} pregões (fluxo estrangeiro + OI Put/Call)...")
+
+    # 1) FLUXO ESTRANGEIRO: precisa de janela+1 acumulados p/ calcular janela deltas
+    acumulados = {}                                        # 'AAAA-MM-DD' -> saldo_acum_mes
+    d, tentativas = dt.date.today(), 0
+    while len(acumulados) < janela + 1 and tentativas < max_calendario:
+        raw, texto = _fetch_bdi_data_especifica(d, capitulo="02")
+        if raw:
+            acc = None
+            try:
+                acc = parse_fluxo_acumulado(linhas=_pdf_lines(raw))
+            except Exception:
+                pass
+            if not acc:
+                acc = parse_fluxo_acumulado(texto=texto)
+            if acc:
+                acumulados[d.isoformat()] = acc["saldo_acum_mes"]
+        d -= dt.timedelta(days=1)
+        tentativas += 1
+    print(f"[bdi_indices] histórico retroativo: fluxo — {len(acumulados)} dias de acumulado "
+          f"encontrados em {tentativas} tentativas de calendário.")
+
+    # 2) OI PUT/CALL DO MERCADO: 1 retrato por dia (não precisa de dia anterior)
+    ois = {}
+    try:
+        from posicoes import parse_oi_pdf, oi_ratios
+        d, tentativas = dt.date.today(), 0
+        while len(ois) < janela and tentativas < max_calendario:
+            raw_oi, _ = _fetch_bdi_data_especifica(d, capitulo="03-4", exigir_marco=False)
+            if raw_oi:
+                try:
+                    pos = parse_oi_pdf(raw_oi)
+                    if pos:
+                        r_oi = oi_ratios(pos, ticker_setor=ticker_setor)
+                        pc = (r_oi.get("mercado") or {}).get("oi_ratio")
+                        if pc is not None and not (isinstance(pc, float) and math.isnan(pc)):
+                            ois[d.isoformat()] = pc
+                except Exception as e:
+                    print(f"[bdi_indices] histórico retroativo: falha ao parsear OI de {d}: {e}")
+            d -= dt.timedelta(days=1)
+            tentativas += 1
+        print(f"[bdi_indices] histórico retroativo: OI — {len(ois)} dias encontrados em "
+              f"{tentativas} tentativas de calendário.")
+    except Exception as e:
+        print(f"[bdi_indices] histórico retroativo: OI indisponível ({e}) — só fluxo.")
+
+    # 3) monta as entradas: fluxo_dia = diferença entre acumulados CONSECUTIVOS (mesmo mês)
+    datas_ordenadas = sorted(acumulados.keys())
+    novo = {}
+    for i, ds in enumerate(datas_ordenadas):
+        entry = {"data": ds, "fluxo_acum_mes": acumulados[ds]}
+        if i > 0:
+            d_prev = dt.date.fromisoformat(datas_ordenadas[i - 1])
+            d_cur = dt.date.fromisoformat(ds)
+            if d_prev.year == d_cur.year and d_prev.month == d_cur.month:
+                entry["fluxo_dia"] = acumulados[ds] - acumulados[datas_ordenadas[i - 1]]
+        novo[ds] = entry
+    for ds, pc in ois.items():
+        novo.setdefault(ds, {"data": ds})["oi_pc_mercado"] = pc
+
+    # funde com o que já existia no cache (existente tem prioridade sobre o retroativo)
+    por_data = {e["data"]: dict(e) for e in hist_atual}
+    for ds, entry in novo.items():
+        if ds not in por_data:
+            por_data[ds] = entry
+        else:
+            for k, v in entry.items():
+                por_data[ds].setdefault(k, v)
+    hist_final = sorted(por_data.values(), key=lambda e: e["data"])[-janela:]
+
+    try:
+        os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump({"dias": hist_final}, f)
+        print(f"[bdi_indices] histórico retroativo: cache preenchido com {len(hist_final)} "
+              f"dias ({hist_final[0]['data'] if hist_final else '—'} a "
+              f"{hist_final[-1]['data'] if hist_final else '—'})")
+    except Exception as e:
+        print(f"[bdi_indices] histórico retroativo: falha ao gravar cache: {e}")
+    return hist_final
