@@ -19,7 +19,7 @@ import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-09-01c-diagnostico-completo-data-tamanho"   # marcador de versão (aparece no log)
+__build__ = "2026-09-01e-valida-completude-bdi02"   # marcador de versão (aparece no log)
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -33,6 +33,18 @@ def _pdf_text(fonte) -> str:
     doc = pymupdf.open(stream=fonte, filetype="pdf") if isinstance(fonte, (bytes, bytearray)) \
         else pymupdf.open(fonte)
     return "\n".join(p.get_text() for p in doc)
+
+
+def _pdf_page_count(raw_bytes) -> int:
+    """Nº de páginas do PDF — diagnóstico: se um arquivo de tamanho grande tiver poucas
+    páginas OU poucas páginas com texto extraível, é sinal de download truncado/corrompido,
+    não de mudança de layout."""
+    try:
+        import pymupdf
+        doc = pymupdf.open(stream=bytes(raw_bytes), filetype="pdf")
+        return doc.page_count
+    except Exception:
+        return -1
 
 
 def _num_br(s):
@@ -196,10 +208,17 @@ def parse_fluxo_acumulado(texto=None, linhas=None) -> dict | None:
     return None
 
 
-def _fetch_bdi02(dias_tentativa: int = 6):
-    """Baixa o BDI_02 mais recente disponível. Retorna (bytes_pdf, texto, data) ou
+def _fetch_bdi02(dias_tentativa: int = 6, min_chars: int = 20000):
+    """Baixa o BDI_02 mais recente e COMPLETO. Retorna (bytes_pdf, texto, data) ou
     (None, None, None). Devolve os bytes para permitir tanto o parser por coordenadas quanto
-    o de texto corrido (fallback)."""
+    o de texto corrido (fallback).
+
+    Os arquivos do BDI são publicados de forma PROGRESSIVA ao longo da noite — o do dia
+    corrente pode existir e baixar normalmente (200 OK, tamanho razoável) mas ainda estar
+    incompleto (só a parte administrativa inicial, sem a seção 'Evolução dos índices', que é
+    processada/publicada depois). Por isso validamos o CONTEÚDO, não só o download: se o texto
+    extraído for muito curto ou não tiver o marco 'Evolução dos índices', tratamos como
+    indisponível e caímos para o dia anterior — igual fazemos quando o download falha de vez."""
     for i in range(dias_tentativa):
         d = dt.date.today() - dt.timedelta(days=i)
         url = _bdi_pdf_url(d)
@@ -209,7 +228,14 @@ def _fetch_bdi02(dias_tentativa: int = 6):
                 raw = r.read()
             if raw[:4] != b"%PDF":
                 continue
-            return bytes(raw), _pdf_text(bytes(raw)), d
+            texto = _pdf_text(bytes(raw))
+            if len(texto) < min_chars or "Evolução dos índices" not in texto:
+                print(f"[bdi_indices] BDI_02 de {d}: baixou ({len(raw)} bytes) mas parece "
+                      f"INCOMPLETO ({len(texto)} caracteres, marco 'Evolução dos índices' "
+                      f"{'presente' if 'Evolução dos índices' in texto else 'ausente'}) — "
+                      f"provável publicação ainda em andamento; tentando dia anterior.")
+                continue
+            return bytes(raw), texto, d
         except Exception:
             continue
     return None, None, None
@@ -247,9 +273,11 @@ def fetch_ifix() -> dict | None:
     if not ifix:
         ifix = parse_ifix(texto=texto)
     if not ifix:
+        _pags = _pdf_page_count(raw)
         print(f"[bdi_indices] IFIX: layout não reconhecido no BDI_02 (nem por coordenadas, "
-              f"nem por texto). Arquivo usado: data={d}, {len(raw)} bytes, "
-              f"{len(texto)} caracteres de texto extraído.")
+              f"nem por texto). Arquivo usado: data={d}, {len(raw)} bytes, {_pags} páginas, "
+              f"{len(texto)} caracteres de texto extraído "
+              f"({len(texto)/max(_pags,1):.0f} car./página em média).")
         if os.getenv("BDI_DEBUG", "0") == "1":
             print("[bdi_indices][debug] trecho ao redor de 'IFIX': "
                   + _debug_snippet(texto, "IFIX"))
@@ -284,9 +312,11 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
     if not acc:
         acc = parse_fluxo_acumulado(texto=texto)
     if not acc:
+        _pags = _pdf_page_count(raw)
         print(f"[bdi_indices] fluxo estrangeiro: layout não reconhecido no BDI_02. "
-              f"Arquivo usado: data={d}, {len(raw)} bytes, "
-              f"{len(texto)} caracteres de texto extraído.")
+              f"Arquivo usado: data={d}, {len(raw)} bytes, {_pags} páginas, "
+              f"{len(texto)} caracteres de texto extraído "
+              f"({len(texto)/max(_pags,1):.0f} car./página em média).")
         if os.getenv("BDI_DEBUG", "0") == "1":
             print("[bdi_indices][debug] trecho ao redor de 'Investidor Estrangeiro': "
                   + _debug_snippet(texto, "Investidor Estrangeiro"))
