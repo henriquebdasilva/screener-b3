@@ -786,7 +786,28 @@ def _main_table(df: pd.DataFrame, title: str) -> str:
     except Exception:
         pass
     return (_secbar(title, f"— {len(df)} papéis") + _kpi_bar(kpis)
-            + f'<table>{_main_head()}{rows}</table>')
+            + f'<table>{_main_head()}{rows}</table>' + _legenda_scores())
+
+
+def _legenda_scores() -> str:
+    """Legenda explicativa dos scores da tabela principal (Invest./Qual./Value/Safety/Div./
+    Consist./Critérios) — reaproveitada em toda tabela que usa _main_head()."""
+    return ('<p class="sub" style="margin:4px 0 14px">'
+           '<b>Invest.</b> (Investment, 0-100) = combinação ponderada dos 4 blocos abaixo: '
+           '35% Qualidade + 30% Value + 20% Safety + 15% Dividendos (pesos re-normalizados '
+           'quando um bloco não se aplica, ex.: bancos sem Safety). '
+           '<b>Qual.</b> (Quality) = média de ROE, ROIC e margem líquida, comparados ao '
+           'restante do universo (setores regulados usam o ROE médio de 5 anos, mais estável). '
+           '<b>Value</b> = média de P/L, P/VP, PEG e EV/EBITDA comparados ao universo — quanto '
+           'maior, mais descontado o papel. <b>Safety</b> = média de Dívida líq./EBITDA '
+           '(cruzada com o ROIC), liquidez corrente e Dívida/Patrimônio (só não-financeiras). '
+           '<b>Div.</b> (Dividend) = nota do dividend yield médio de 5 anos frente ao universo. '
+           '<b>Consist.</b> = % dos critérios de CRESCIMENTO consistente ao longo de 5 anos '
+           '(EBITDA, margem, ROE, ROIC em tendência de alta) que foram atendidos — X/Y entre '
+           'parênteses = atendidos/aplicáveis. <b>Critérios</b> = checklist fundamentalista de '
+           '8 regras (ROE ≥ Selic, ROE e ROIC ≥ média do setor, margem ≥ 15%, CAGR ≥ setor, '
+           'dívida controlada, market cap ≥ R$300mi, sem venda relevante de insider) — X/Y = '
+           'atendidos/aplicáveis (alguns não se aplicam a bancos/seguros).</p>')
 
 
 def _group_block(df: pd.DataFrame, title: str, show_ind: bool = True,
@@ -814,11 +835,36 @@ def _defensivas_section(df: pd.DataFrame, thr: float) -> str:
         return (_secbar(title)
                 + '<p class="empty">Nenhuma selecionada nesse critério hoje.</p>')
     sub = ('<p class="sub" style="margin:0 0 8px">Recorte das <b>blue chips</b> selecionadas '
-           '(BOVA11) em setores menos sensíveis ao ciclo econômico. Small caps ficam fora desta '
-           'seção. Indicadores e preços-teto destes papéis estão na seção BOVA11 acima.</p>')
-    rows = "".join(_fmt_row(r) for _, r in df.iterrows())
-    return (_secbar(title, f"— {len(df)} papéis") + sub
-            + f'<table>{_main_head()}{rows}</table>')
+           '(BOVA11) em setores menos sensíveis ao ciclo econômico. Small caps ficam fora '
+           'desta seção.</p>')
+    parts = [_main_table(df, title), sub, _ind_table(df), _risco_table(df), _stats_table(df),
+             f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}']
+    if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
+        parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
+    return "".join(parts)
+
+
+def _dividendos_qualidade_section(df: pd.DataFrame, quality_min: float,
+                                  dy_min: float) -> str:
+    """Recorte de ações de ALTA QUALIDADE e BOAS PAGADORAS DE DIVIDENDOS: Quality ≥
+    `quality_min` E dividend yield médio de 5 anos ≥ `dy_min`, ordenado pelo DY médio
+    (maior primeiro). Mesmas sub-tabelas completas de BOVA11/SMALL11."""
+    title = f"Qualidade + dividendos (Qual. ≥ {quality_min:.0f}, DY médio 5a ≥ {dy_min:.1f}%)"
+    if df is None or df.empty:
+        return (_secbar(title)
+                + '<p class="empty">Nenhuma selecionada nesse critério hoje.</p>')
+    df = df.sort_values("dy_div", ascending=False) if "dy_div" in df.columns else df
+    sub = ('<p class="sub" style="margin:0 0 8px">Papéis selecionados com nota de Qualidade '
+           'alta (ROE, ROIC e margem líquida fortes frente ao universo) E dividend yield '
+           'MÉDIO dos últimos 5 anos elevado — não o DY do último ano isolado, que pode estar '
+           'distorcido por um evento pontual. Quando o histórico de 5 anos não está '
+           'disponível, usa o DY do último ano como aproximação. Ordenado pelo DY médio, '
+           'maior primeiro.</p>')
+    parts = [_main_table(df, title), sub, _ind_table(df), _risco_table(df), _stats_table(df),
+             f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}']
+    if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
+        parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
+    return "".join(parts)
 
 
 def _posicao_table(df: pd.DataFrame) -> str:
@@ -873,7 +919,8 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                defensive_cyc: float = 0.4, wishlist_df: pd.DataFrame = None,
                carteira_df: pd.DataFrame = None, setor_medians: dict = None,
                macro: dict = None, regime: dict = None, for_pdf: bool = False,
-               opcoes: dict = None) -> str:
+               opcoes: dict = None, quality_min_div: float = 65.0,
+               dy_min_div: float = 6.0) -> str:
     global _SECTOR_MED
     _SECTOR_MED = setor_medians or {}
     global _PC_ATIVO
@@ -952,6 +999,13 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                 "investment", ascending=False)
         else:
             defensivas = selecionados.iloc[0:0]
+        # Qualidade + dividendos: Quality >= quality_min_div E DY médio 5a >= dy_min_div
+        if "quality" in selecionados.columns and "dy_div" in selecionados.columns:
+            qual = pd.to_numeric(selecionados["quality"], errors="coerce")
+            dy = pd.to_numeric(selecionados["dy_div"], errors="coerce")
+            div_qual = selecionados[(qual >= quality_min_div) & (dy >= dy_min_div)]
+        else:
+            div_qual = selecionados.iloc[0:0]
         nota_trim = ""
         if not (show_ind and show_risco and show_agenda and show_teto):
             faltando = []
@@ -973,6 +1027,7 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
             + _group_block(small, f"SMALL11 · Small Caps{_suf('SMALL11')}", show_ind, show_risco,
                            show_agenda, show_teto)
             + _defensivas_section(defensivas, defensive_cyc)
+            + _dividendos_qualidade_section(div_qual, quality_min_div, dy_min_div)
             + f'<p class="sub" style="margin:14px 0 0">{_TETO_NOTE}</p>'
             + _teses_block(selecionados, tese_max=tese_max)
             + watch

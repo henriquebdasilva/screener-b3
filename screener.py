@@ -38,6 +38,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05, trend_ma_long=30,
         pattern_max_sep=60, pattern_low_zone=0.045, no_pattern_virada=False,
         historico_janela=15,
+        quality_min_div=65.0, dy_min_div=6.0,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
@@ -697,7 +698,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                        defensive_cyc=defensive_max_cyc,
                                        setor_medians=setor_medians, macro=macro_data,
                                        regime=regime, wishlist_df=wl_df, carteira_df=ca_df,
-                                       for_pdf=True, opcoes=opcoes_data)
+                                       for_pdf=True, opcoes=opcoes_data,
+                                       quality_min_div=quality_min_div, dy_min_div=dy_min_div)
                 pdf_path = html_to_pdf(full_html, f"{outdir}/relatorio_{hoje}.pdf")
 
             if pdf_path:            # corpo curto + relatório no PDF anexo
@@ -713,7 +715,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                   group_pct=gpct, defensive_cyc=defensive_max_cyc,
                                   setor_medians=setor_medians, macro=macro_data,
                                   regime=regime, wishlist_df=wl_df, carteira_df=ca_df,
-                                  opcoes=opcoes_data)
+                                  opcoes=opcoes_data,
+                                  quality_min_div=quality_min_div, dy_min_div=dy_min_div)
 
             subject = (f"[Screener B3] {len(selecionados)} papéis nos critérios "
                        f"({n_graf} com oportunidade gráfica) — {hoje}")
@@ -826,6 +829,12 @@ def parse_args():
                         "Put/Call do mercado). Se o cache salvo no git tiver menos dias que "
                         "isso, busca RETROATIVAMENTE nos BDIs dos últimos pregões p/ "
                         "preencher de uma vez (default 15)")
+    p.add_argument("--quality-min-div", type=float, default=65.0,
+                   help="nota mínima de Qualidade p/ entrar na seção 'Qualidade + "
+                        "dividendos' (default 65)")
+    p.add_argument("--dy-min-div", type=float, default=6.0,
+                   help="DY médio de 5 anos mínimo (%%) p/ entrar na seção 'Qualidade + "
+                        "dividendos' (default 6.0)")
     p.add_argument("--pattern-max-sep", type=int, default=60,
                    help="separação MÁXIMA (pregões) entre os fundos de um fundo duplo/triplo "
                         "(default 60; evita casar vales distantes que não formam um W)")
@@ -941,6 +950,7 @@ if __name__ == "__main__":
         pattern_low_zone=a.pattern_low_zone,
         no_pattern_virada=a.no_pattern_virada,
         historico_janela=a.historico_janela,
+        quality_min_div=a.quality_min_div, dy_min_div=a.dy_min_div,
         dy_years=a.dy_years, use_avg_dy=not a.no_avg_dy,
         bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto,
         teto_outlier_mult=a.teto_outlier_mult,
