@@ -21,6 +21,9 @@ on:
       q_divo:
         description: "Fração superior — DIVO11 p/ 'Qualidade + dividendos' (ex.: 0.50)"
         default: "0.50"
+      q_auvp:
+        description: "Fração superior — AUVP11 p/ 'Melhores do AUVP11' (ex.: 0.70)"
+        default: "0.70"
       historico_janela:
         description: "Nº de pregões no gráfico de evolução (fluxo estrangeiro + OI Put/Call)"
         default: "15"
@@ -56,6 +59,7 @@ jobs:
           QSMALL: ${{ github.event.inputs.q_smallcap  || '0.50' }}
           QDEF:   ${{ github.event.inputs.q_defensive || '0.70' }}
           QDIVO:  ${{ github.event.inputs.q_divo || '0.50' }}
+          QAUVP:  ${{ github.event.inputs.q_auvp || '0.70' }}
           HISTJAN: ${{ github.event.inputs.historico_janela || '15' }}
           # E-mail (configure em Settings -> Secrets and variables -> Actions)
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -81,7 +85,7 @@ jobs:
         run: |
           python screener.py --universe "$UNIVERSE" \
             --q-bluechip "$QBLUE" --q-smallcap "$QSMALL" --q-defensive "$QDEF" \
-            --q-divo "$QDIVO" --historico-janela "$HISTJAN" \
+            --q-divo "$QDIVO" --q-auvp "$QAUVP" --historico-janela "$HISTJAN" \
             --no-volume --no-trend \
             --breakout-consol-pct 8 \
             --min-marketcap 700
