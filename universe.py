@@ -84,6 +84,20 @@ IDIV = [
     "VIVT3", "TIMS3", "KLBN4", "SUZB3", "TRPL4",
 ]
 
+# --- AUVP (proxy do AUVP11 — replica o Índice Teva Ações Fundamentos, IAFD). Índice de
+# TERCEIROS (BTG Pactual/Teva/AUVP Capital, não é um índice "oficial" da própria B3 como
+# IBOV/SMLL/IDIV) — pode não estar disponível na API pública da B3 (ver get_universe, que
+# tenta e cai aqui se falhar). Metodologia: empresas com rentabilidade, eficiência
+# operacional e baixa alavancagem consistentes; EXCLUI Varejo, Proteína Animal e Transporte
+# Aéreo. Lista de referência ~2026, aproximada (favorece utilities/serviços/industriais de
+# baixa alavancagem, coerente com a metodologia divulgada) — SEM fonte automática confirmada;
+# atualize manualmente. ---
+AUVP = [
+    "WEGE3", "EGIE3", "TAEE11", "VIVT3", "TOTS3", "FLRY3", "HYPE3", "CSMG3", "SAPR11",
+    "PSSA3", "BBSE3", "ITSA4", "SBSP3", "UNIP6", "KLBN4", "CPLE6", "CMIG4", "TIMS3",
+    "EQTL3", "ENGI11", "TRPL4", "ALUP11", "CPFE3", "NEOE3", "ISAE4", "AURE3",
+]
+
 
 def _dedup(seq):
     seen, out = set(), []
@@ -212,6 +226,7 @@ def get_universe(which: str = "both") -> dict[str, list[str]]:
     if which in ("smll", "both"):
         plan.append(("SMALL11", "ishares", SMAL11_URL, SMLL))
     plan.append(("DIVO11", "b3api", "IDIV", IDIV))  # sempre incluído
+    plan.append(("AUVP11", "b3api", "IAFD", AUVP))  # sempre incluído
 
     _ISHARES_SECTORS.clear()
     for origem, fonte, ref, estatica in plan:

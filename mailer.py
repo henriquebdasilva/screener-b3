@@ -869,6 +869,31 @@ def _dividendos_qualidade_section(df: pd.DataFrame, q_divo: float) -> str:
     return "".join(parts)
 
 
+def _auvp_section(df: pd.DataFrame, q_auvp: float) -> str:
+    """Recorte dos MELHORES ATIVOS do universo AUVP11 (replica o Índice Teva Ações
+    Fundamentos — IAFD, metodologia 100% fundamentalista: rentabilidade, eficiência
+    operacional e baixa alavancagem, com exclusão setorial de Varejo/Proteína Animal/
+    Transporte Aéreo): top `q_auvp` por Investment Score dentro do próprio AUVP11, mesmos
+    cortes fundamentalistas duros e mesmo cálculo das demais listas — BOVA11/SMALL11/DIVO11.
+    `df` já vem PRÉ-FILTRADO do screener.py — esta função só formata/exibe."""
+    title = f"Melhores do AUVP11 (top {q_auvp*100:.0f}% por Investment Score)"
+    if df is None or df.empty:
+        return (_secbar(title)
+                + '<p class="empty">Nenhuma selecionada nesse critério hoje.</p>')
+    sub = ('<p class="sub" style="margin:0 0 8px">Recorte do universo <b>AUVP11</b> (replica '
+           'o Índice Teva Ações Fundamentos — IAFD, metodologia 100% fundamentalista: '
+           'rentabilidade, eficiência operacional e baixa alavancagem consistentes, com '
+           'exclusão setorial de Varejo, Proteína Animal e Transporte Aéreo): mesmos cortes '
+           f'fundamentalistas duros e mesmo cálculo de Investment Score das demais listas, '
+           f'top {q_auvp*100:.0f}% do AUVP11 por Investment Score. Ordenado pelo Investment '
+           'Score, maior primeiro.</p>')
+    parts = [_main_table(df, title), sub, _ind_table(df), _risco_table(df), _stats_table(df),
+             f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}']
+    if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
+        parts.append(f'<h3 style="{_H3}">Agenda &amp; dividendos</h3>{_agenda_table(df)}')
+    return "".join(parts)
+
+
 def _posicao_table(df: pd.DataFrame) -> str:
     """Mini-tabela de posição da carteira: preço médio, atual e variação."""
     linhas = []
@@ -922,7 +947,8 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                carteira_df: pd.DataFrame = None, setor_medians: dict = None,
                macro: dict = None, regime: dict = None, for_pdf: bool = False,
                opcoes: dict = None, divo_df: pd.DataFrame = None,
-               q_divo: float = 0.50) -> str:
+               q_divo: float = 0.50, auvp_df: pd.DataFrame = None,
+               q_auvp: float = 0.70) -> str:
     global _SECTOR_MED
     _SECTOR_MED = setor_medians or {}
     global _PC_ATIVO
@@ -1026,6 +1052,7 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                            show_agenda, show_teto)
             + _defensivas_section(defensivas, defensive_cyc)
             + _dividendos_qualidade_section(div_qual, q_divo)
+            + _auvp_section(auvp_df if auvp_df is not None else selecionados.iloc[0:0], q_auvp)
             + f'<p class="sub" style="margin:14px 0 0">{_TETO_NOTE}</p>'
             + _teses_block(selecionados, tese_max=tese_max)
             + watch
@@ -1054,10 +1081,13 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
 
 
 def _wrap(body: str, hoje: str, meta: dict, n_graf: int, pdf: bool = False) -> str:
-    # no PDF: página deitada (A4 landscape) e fonte de tabela menor p/ caber tabelas largas
-    page = ("@page{size:A4 landscape;margin:1.1cm}"
+    # no PDF: página CONTÍNUA (sem quebra) — largura igual à A4 landscape, mas altura enorme
+    # pra caber o relatório inteiro numa única "folha". Isso evita cortar cabeçalho de tabela
+    # longe dos valores quando a tabela atravessa o limite de uma página A4 normal.
+    page = ("@page{size:29.7cm 1000cm;margin:1.1cm}"
             "body{font-size:12px}table{font-size:9.5px}.ind table{font-size:8.5px}"
-            ".card{box-shadow:none;padding:0}" if pdf else "")
+            ".card{box-shadow:none;padding:0}"
+            "table{page-break-inside:avoid}tr{page-break-inside:avoid}" if pdf else "")
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{_CSS}{page}</style></head>
 <body><div class="card">
 <h1>Relatório Quantitativo · Ações B3</h1>

@@ -42,7 +42,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
         max_net_debt_equity=1.5, split_by_origin=True, group_top=None,
-        q_bluechip=0.60, q_smallcap=0.50, q_defensive=0.70, q_divo=0.50,
+        q_bluechip=0.60, q_smallcap=0.50, q_defensive=0.70, q_divo=0.50, q_auvp=0.70,
         use_basileia=True, cyclical_penalty=0.25, defensive_max_cyc=0.4,
         teto_max_upside=200.0, teto_disp_max=8.0,
         suspect_pl_min=2.0, suspect_dy_max=20.0, teto_proj_yield=6.0,
@@ -506,6 +506,23 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
           f"{int((hard & divo_mask).sum())} | top {q_divo*100:.0f}% + DY>=5% todo ano (5a): "
           f"{int(divo_ok.sum())}")
 
+    # ---- Seleção separada p/ AUVP11 (seção 'Melhores do AUVP11') ----
+    # Mesmo esquema do DIVO11 acima: universo = tickers com AUVP11 na origem, mesmos cortes
+    # fundamentalistas duros (`hard`) + top `q_auvp` por Investment Score dentro do próprio
+    # AUVP11 (não compete com BOVA11/SMALL11/DIVO11 pela vaga). Sem filtro extra de dividendo
+    # aqui — o pedido foi só "melhores ativos", não pagadores de dividendo.
+    auvp_mask = df["origem"].astype(str).str.contains("AUVP11", na=False)
+    auvp_surv = df[hard & auvp_mask]
+    if len(auvp_surv):
+        thr_auvp = auvp_surv["investment"].quantile(1 - q_auvp)
+        auvp_ok = hard & auvp_mask & df["investment"].ge(thr_auvp)
+    else:
+        auvp_ok = pd.Series(False, index=df.index)
+    auvp_ok = auvp_ok.fillna(False)
+    df["auvp_ok"] = auvp_ok
+    print(f"[auvp11] universo AUVP11: {int(auvp_mask.sum())} ativos | passam cortes duros: "
+          f"{int((hard & auvp_mask).sum())} | top {q_auvp*100:.0f}%: {int(auvp_ok.sum())}")
+
     hoje = dt.date.today().isoformat()
     # marca wishlist/carteira (sempre exibidos) e a posição da carteira
     df["in_wishlist"] = df.index.isin(wl)
@@ -563,7 +580,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
             "mediana_1a", "media_1a", "max_drawdown", "vol_anual", "ret_ytd", "min_ytd", "max_ytd", "rel_ibov_ytd",
             "beta", "corr_ibov", "corr_usd", "close",
-            "div_ge5_5a", "divo_qualidade_ok",
+            "div_ge5_5a", "divo_qualidade_ok", "auvp_ok",
             "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_projetivo",
             "teto_graham_selic", "teto_mult_ebitda",
@@ -602,6 +619,14 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             divo_selecionados = divo_selecionados.sort_values("dy_div", ascending=False)
     else:
         divo_selecionados = full.iloc[0:0]
+
+    # AUVP11 · Melhores ativos: seleção independente (ver bloco 'auvp_ok' acima), ordenada
+    # pelo Investment Score (maior primeiro).
+    if "auvp_ok" in full.columns:
+        auvp_selecionados = full[full["auvp_ok"] == True].sort_values(  # noqa: E712
+            "investment", ascending=False)
+    else:
+        auvp_selecionados = full.iloc[0:0]
 
     _write_markdown(full, selecionados, hoje, outdir,
                     dict(universe=universe, top_quantile=top_quantile,
@@ -730,7 +755,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                        setor_medians=setor_medians, macro=macro_data,
                                        regime=regime, wishlist_df=wl_df, carteira_df=ca_df,
                                        for_pdf=True, opcoes=opcoes_data,
-                                       divo_df=divo_selecionados, q_divo=q_divo)
+                                       divo_df=divo_selecionados, q_divo=q_divo,
+                                       auvp_df=auvp_selecionados, q_auvp=q_auvp)
                 pdf_path = html_to_pdf(full_html, f"{outdir}/relatorio_{hoje}.pdf")
 
             if pdf_path:            # corpo curto + relatório no PDF anexo
@@ -747,7 +773,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                   setor_medians=setor_medians, macro=macro_data,
                                   regime=regime, wishlist_df=wl_df, carteira_df=ca_df,
                                   opcoes=opcoes_data,
-                                  divo_df=divo_selecionados, q_divo=q_divo)
+                                  divo_df=divo_selecionados, q_divo=q_divo,
+                                  auvp_df=auvp_selecionados, q_auvp=q_auvp)
 
             subject = (f"[Screener B3] {len(selecionados)} papéis nos critérios "
                        f"({n_graf} com oportunidade gráfica) — {hoje}")
@@ -816,6 +843,10 @@ def parse_args():
                         "'Qualidade + dividendos' — seleção independente de BOVA11/SMALL11, "
                         "com o filtro adicional de DY >= 5%% em TODOS os últimos 5 anos "
                         "(default 0.50 = top 50%%)")
+    p.add_argument("--q-auvp", type=float, default=0.70,
+                   help="fração superior (por Investment Score) do universo AUVP11 p/ a seção "
+                        "'Melhores do AUVP11' — seleção independente de BOVA11/SMALL11/DIVO11 "
+                        "(default 0.70 = top 70%%)")
     g.add_argument("--min-invest", type=float, default=None,
                    help="nota mínima de Investment (0-100) em vez de quantil")
     p.add_argument("--lookback", type=int, default=20)
@@ -990,6 +1021,7 @@ if __name__ == "__main__":
         split_by_origin=not a.no_split, group_top=a.group_top,
         q_bluechip=a.q_bluechip, q_smallcap=a.q_smallcap, q_defensive=a.q_defensive,
         q_divo=a.q_divo,
+        q_auvp=a.q_auvp,
         use_basileia=not a.no_basileia, cyclical_penalty=a.cyclical_penalty,
         defensive_max_cyc=a.defensive_max_cyc,
         teto_max_upside=a.teto_max_upside, teto_disp_max=a.teto_disp_max,
