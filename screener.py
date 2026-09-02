@@ -38,12 +38,11 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         flag_min_dias=7, flag_pole_min=0.12, flag_min_retrace=0.05, trend_ma_long=30,
         pattern_max_sep=60, pattern_low_zone=0.045, no_pattern_virada=False,
         historico_janela=15,
-        quality_min_div=65.0, dy_min_div=6.0,
         dy_years=5, use_avg_dy=True, bazin_yield_pct=0.0, teto_desconto_pct=10.0,
         teto_outlier_mult=2.5, require_roe_roic_selic=True, max_leverage=3.0,
         min_marketcap=500_000_000.0, consistency_weight=0.15,
         max_net_debt_equity=1.5, split_by_origin=True, group_top=None,
-        q_bluechip=0.60, q_smallcap=0.50, q_defensive=0.70,
+        q_bluechip=0.60, q_smallcap=0.50, q_defensive=0.70, q_divo=0.50,
         use_basileia=True, cyclical_penalty=0.25, defensive_max_cyc=0.4,
         teto_max_upside=200.0, teto_disp_max=8.0,
         suspect_pl_min=2.0, suspect_dy_max=20.0, teto_proj_yield=6.0,
@@ -486,6 +485,27 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     df["oportunidade_grafica"] = np.where(
         df["breakout"] & (strat.astype(str) != ""), strat.astype(str), "Não")
 
+    # ---- Seleção separada p/ DIVO11 (seção 'Qualidade + dividendos') ----
+    # Independente do corte BOVA11/SMALL11 acima: universo = tickers com DIVO11 na origem,
+    # mesmos cortes fundamentalistas duros (`hard`) + top `q_divo` por Investment Score dentro
+    # do próprio DIVO11 (não compete com BOVA11/SMALL11 pela vaga) + filtro adicional de
+    # DY >= 5% em TODOS os últimos 5 anos (coluna div_ge5_5a, calculada acima em "Consistência"
+    # — reaproveita a mesma pipeline de cálculo das demais listas, não duplica lógica).
+    divo_mask = df["origem"].astype(str).str.contains("DIVO11", na=False)
+    divo_surv = df[hard & divo_mask]
+    if len(divo_surv):
+        thr_divo = divo_surv["investment"].quantile(1 - q_divo)
+        divo_ok = hard & divo_mask & df["investment"].ge(thr_divo)
+    else:
+        divo_ok = pd.Series(False, index=df.index)
+    divo_ok = divo_ok.fillna(False)
+    if "div_ge5_5a" in df.columns:
+        divo_ok = divo_ok & (df["div_ge5_5a"] == True)    # noqa: E712 (Series de bool/None)
+    df["divo_qualidade_ok"] = divo_ok
+    print(f"[divo11] universo DIVO11: {int(divo_mask.sum())} ativos | passam cortes duros: "
+          f"{int((hard & divo_mask).sum())} | top {q_divo*100:.0f}% + DY>=5% todo ano (5a): "
+          f"{int(divo_ok.sum())}")
+
     hoje = dt.date.today().isoformat()
     # marca wishlist/carteira (sempre exibidos) e a posição da carteira
     df["in_wishlist"] = df.index.isin(wl)
@@ -543,6 +563,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
             "mediana_1a", "media_1a", "max_drawdown", "vol_anual", "ret_ytd", "min_ytd", "max_ytd", "rel_ibov_ytd",
             "beta", "corr_ibov", "corr_usd", "close",
+            "div_ge5_5a", "divo_qualidade_ok",
             "teto_bazin", "teto_gordon",
             "teto_dcf", "teto_graham", "teto_lynch", "teto_projetivo",
             "teto_graham_selic", "teto_mult_ebitda",
@@ -571,6 +592,16 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     # SELEÇÃO = passa nos critérios fundamentalistas (o rompimento é só flag, não filtra)
     selecionados = full[full["fund_ok"]].sort_values("investment", ascending=False)
     selecionados.to_csv(f"{outdir}/selecionados_{hoje}.csv", encoding="utf-8-sig")
+
+    # DIVO11 · Qualidade + dividendos: seleção independente (ver bloco 'divo_qualidade_ok'
+    # acima), ordenada pelo DY médio de 5a (maior primeiro) — é o que o leitor quer ver
+    # primeiro nessa seção específica.
+    if "divo_qualidade_ok" in full.columns:
+        divo_selecionados = full[full["divo_qualidade_ok"] == True]  # noqa: E712
+        if "dy_div" in divo_selecionados.columns:
+            divo_selecionados = divo_selecionados.sort_values("dy_div", ascending=False)
+    else:
+        divo_selecionados = full.iloc[0:0]
 
     _write_markdown(full, selecionados, hoje, outdir,
                     dict(universe=universe, top_quantile=top_quantile,
@@ -699,7 +730,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                        setor_medians=setor_medians, macro=macro_data,
                                        regime=regime, wishlist_df=wl_df, carteira_df=ca_df,
                                        for_pdf=True, opcoes=opcoes_data,
-                                       quality_min_div=quality_min_div, dy_min_div=dy_min_div)
+                                       divo_df=divo_selecionados, q_divo=q_divo)
                 pdf_path = html_to_pdf(full_html, f"{outdir}/relatorio_{hoje}.pdf")
 
             if pdf_path:            # corpo curto + relatório no PDF anexo
@@ -716,7 +747,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                   setor_medians=setor_medians, macro=macro_data,
                                   regime=regime, wishlist_df=wl_df, carteira_df=ca_df,
                                   opcoes=opcoes_data,
-                                  quality_min_div=quality_min_div, dy_min_div=dy_min_div)
+                                  divo_df=divo_selecionados, q_divo=q_divo)
 
             subject = (f"[Screener B3] {len(selecionados)} papéis nos critérios "
                        f"({n_graf} com oportunidade gráfica) — {hoje}")
@@ -780,6 +811,11 @@ def parse_args():
     p.add_argument("--q-defensive", type=float, default=0.70,
                    help="fração superior do pool DEFENSIVO (baixa ciclicidade), mais permissiva "
                         "(default 0.70)")
+    p.add_argument("--q-divo", type=float, default=0.50,
+                   help="fração superior (por Investment Score) do universo DIVO11 p/ a seção "
+                        "'Qualidade + dividendos' — seleção independente de BOVA11/SMALL11, "
+                        "com o filtro adicional de DY >= 5%% em TODOS os últimos 5 anos "
+                        "(default 0.50 = top 50%%)")
     g.add_argument("--min-invest", type=float, default=None,
                    help="nota mínima de Investment (0-100) em vez de quantil")
     p.add_argument("--lookback", type=int, default=20)
@@ -829,12 +865,6 @@ def parse_args():
                         "Put/Call do mercado). Se o cache salvo no git tiver menos dias que "
                         "isso, busca RETROATIVAMENTE nos BDIs dos últimos pregões p/ "
                         "preencher de uma vez (default 15)")
-    p.add_argument("--quality-min-div", type=float, default=65.0,
-                   help="nota mínima de Qualidade p/ entrar na seção 'Qualidade + "
-                        "dividendos' (default 65)")
-    p.add_argument("--dy-min-div", type=float, default=6.0,
-                   help="DY médio de 5 anos mínimo (%%) p/ entrar na seção 'Qualidade + "
-                        "dividendos' (default 6.0)")
     p.add_argument("--pattern-max-sep", type=int, default=60,
                    help="separação MÁXIMA (pregões) entre os fundos de um fundo duplo/triplo "
                         "(default 60; evita casar vales distantes que não formam um W)")
@@ -950,7 +980,6 @@ if __name__ == "__main__":
         pattern_low_zone=a.pattern_low_zone,
         no_pattern_virada=a.no_pattern_virada,
         historico_janela=a.historico_janela,
-        quality_min_div=a.quality_min_div, dy_min_div=a.dy_min_div,
         dy_years=a.dy_years, use_avg_dy=not a.no_avg_dy,
         bazin_yield_pct=a.bazin_yield, teto_desconto_pct=a.teto_desconto,
         teto_outlier_mult=a.teto_outlier_mult,
@@ -960,6 +989,7 @@ if __name__ == "__main__":
         max_net_debt_equity=a.max_net_debt_equity,
         split_by_origin=not a.no_split, group_top=a.group_top,
         q_bluechip=a.q_bluechip, q_smallcap=a.q_smallcap, q_defensive=a.q_defensive,
+        q_divo=a.q_divo,
         use_basileia=not a.no_basileia, cyclical_penalty=a.cyclical_penalty,
         defensive_max_cyc=a.defensive_max_cyc,
         teto_max_upside=a.teto_max_upside, teto_disp_max=a.teto_disp_max,

@@ -844,22 +844,24 @@ def _defensivas_section(df: pd.DataFrame, thr: float) -> str:
     return "".join(parts)
 
 
-def _dividendos_qualidade_section(df: pd.DataFrame, quality_min: float,
-                                  dy_min: float) -> str:
-    """Recorte de ações de ALTA QUALIDADE e BOAS PAGADORAS DE DIVIDENDOS: Quality ≥
-    `quality_min` E dividend yield médio de 5 anos ≥ `dy_min`, ordenado pelo DY médio
-    (maior primeiro). Mesmas sub-tabelas completas de BOVA11/SMALL11."""
-    title = f"Qualidade + dividendos (Qual. ≥ {quality_min:.0f}, DY médio 5a ≥ {dy_min:.1f}%)"
+def _dividendos_qualidade_section(df: pd.DataFrame, q_divo: float) -> str:
+    """Recorte de ações de ALTA QUALIDADE e BOAS PAGADORAS DE DIVIDENDOS: extraído do
+    universo DIVO11 (índice IDIV — dividendos da B3), top `q_divo` por Investment Score
+    dentro do próprio DIVO11 (mesmos cortes fundamentalistas e mesmo cálculo das demais
+    listas — BOVA11/SMALL11), com o filtro adicional de ter pago DY >= 5% em TODOS os
+    últimos 5 anos civis completos (não só na média). Ordenado pelo DY médio de 5a, maior
+    primeiro. `df` já vem PRÉ-FILTRADO do screener.py — esta função só formata/exibe."""
+    title = f"Qualidade + dividendos (DIVO11 · top {q_divo*100:.0f}% · DY ≥5% em todos os últimos 5 anos)"
     if df is None or df.empty:
         return (_secbar(title)
                 + '<p class="empty">Nenhuma selecionada nesse critério hoje.</p>')
-    df = df.sort_values("dy_div", ascending=False) if "dy_div" in df.columns else df
-    sub = ('<p class="sub" style="margin:0 0 8px">Papéis selecionados com nota de Qualidade '
-           'alta (ROE, ROIC e margem líquida fortes frente ao universo) E dividend yield '
-           'MÉDIO dos últimos 5 anos elevado — não o DY do último ano isolado, que pode estar '
-           'distorcido por um evento pontual. Quando o histórico de 5 anos não está '
-           'disponível, usa o DY do último ano como aproximação. Ordenado pelo DY médio, '
-           'maior primeiro.</p>')
+    sub = ('<p class="sub" style="margin:0 0 8px">Recorte do universo <b>DIVO11</b> (índice '
+           'IDIV — ações de destaque em dividendos da B3): mesmos cortes fundamentalistas '
+           f'duros e mesmo cálculo de Investment Score das demais listas, top {q_divo*100:.0f}% '
+           'do DIVO11 por Investment Score, MAIS o filtro de ter pago dividend yield ≥ 5% em '
+           '<b>cada um</b> dos últimos 5 anos civis completos — não a média (um ano '
+           'excepcional não compensa 4 anos fracos). Ordenado pelo DY médio de 5 anos, maior '
+           'primeiro.</p>')
     parts = [_main_table(df, title), sub, _ind_table(df), _risco_table(df), _stats_table(df),
              f'<h3 style="{_H3}">Preços-teto (R$)</h3>{_teto_table(df)}']
     if "prox_resultado" in df.columns or "ex_dividendo" in df.columns:
@@ -919,8 +921,8 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                defensive_cyc: float = 0.4, wishlist_df: pd.DataFrame = None,
                carteira_df: pd.DataFrame = None, setor_medians: dict = None,
                macro: dict = None, regime: dict = None, for_pdf: bool = False,
-               opcoes: dict = None, quality_min_div: float = 65.0,
-               dy_min_div: float = 6.0) -> str:
+               opcoes: dict = None, divo_df: pd.DataFrame = None,
+               q_divo: float = 0.50) -> str:
     global _SECTOR_MED
     _SECTOR_MED = setor_medians or {}
     global _PC_ATIVO
@@ -999,13 +1001,9 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
                 "investment", ascending=False)
         else:
             defensivas = selecionados.iloc[0:0]
-        # Qualidade + dividendos: Quality >= quality_min_div E DY médio 5a >= dy_min_div
-        if "quality" in selecionados.columns and "dy_div" in selecionados.columns:
-            qual = pd.to_numeric(selecionados["quality"], errors="coerce")
-            dy = pd.to_numeric(selecionados["dy_div"], errors="coerce")
-            div_qual = selecionados[(qual >= quality_min_div) & (dy >= dy_min_div)]
-        else:
-            div_qual = selecionados.iloc[0:0]
+        # Qualidade + dividendos: já vem PRÉ-FILTRADO do screener.py (universo DIVO11, top
+        # q_divo% + DY>=5% em todos os últimos 5 anos) — não recalcula nada aqui.
+        div_qual = divo_df if divo_df is not None else selecionados.iloc[0:0]
         nota_trim = ""
         if not (show_ind and show_risco and show_agenda and show_teto):
             faltando = []
@@ -1027,7 +1025,7 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
             + _group_block(small, f"SMALL11 · Small Caps{_suf('SMALL11')}", show_ind, show_risco,
                            show_agenda, show_teto)
             + _defensivas_section(defensivas, defensive_cyc)
-            + _dividendos_qualidade_section(div_qual, quality_min_div, dy_min_div)
+            + _dividendos_qualidade_section(div_qual, q_divo)
             + f'<p class="sub" style="margin:14px 0 0">{_TETO_NOTE}</p>'
             + _teses_block(selecionados, tese_max=tese_max)
             + watch
