@@ -18,6 +18,12 @@ on:
       q_defensive:
         description: "Fração superior — defensivas (ex.: 0.70)"
         default: "0.70"
+      q_divo:
+        description: "Fração superior — DIVO11 p/ 'Qualidade + dividendos' (ex.: 0.50)"
+        default: "0.50"
+      historico_janela:
+        description: "Nº de pregões no gráfico de evolução (fluxo estrangeiro + OI Put/Call)"
+        default: "15"
 
 permissions:
   contents: write           # necessário para commitar os relatórios de volta
@@ -49,6 +55,8 @@ jobs:
           QBLUE:  ${{ github.event.inputs.q_bluechip  || '0.60' }}
           QSMALL: ${{ github.event.inputs.q_smallcap  || '0.50' }}
           QDEF:   ${{ github.event.inputs.q_defensive || '0.70' }}
+          QDIVO:  ${{ github.event.inputs.q_divo || '0.50' }}
+          HISTJAN: ${{ github.event.inputs.historico_janela || '15' }}
           # E-mail (configure em Settings -> Secrets and variables -> Actions)
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -73,6 +81,7 @@ jobs:
         run: |
           python screener.py --universe "$UNIVERSE" \
             --q-bluechip "$QBLUE" --q-smallcap "$QSMALL" --q-defensive "$QDEF" \
+            --q-divo "$QDIVO" --historico-janela "$HISTJAN" \
             --no-volume --no-trend \
             --breakout-consol-pct 8 \
             --min-marketcap 700
