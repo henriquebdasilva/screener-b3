@@ -42,7 +42,7 @@ SMAL11_URL = ("https://www.blackrock.com/br/products/251752/ishares-bmfbovespa-s
               "fundo-de-ndice-fund/1506433276998.ajax?fileType=csv&fileName=SMAL11_"
               "holdings&dataType=fund")
 
-_TICKER_RE = re.compile(r"^[A-Z]{4}[0-9]{1,2}$")
+_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9]{3}[0-9]{1,2}$")   # aceita raiz c/ dígito (ex.: B3SA3)
 
 # --- Ibovespa (proxy do BOVA11). Lista de referência ~2026; edite conforme o rebal. ---
 IBOV = [
@@ -188,6 +188,57 @@ def _fetch_b3_index_portfolio(index_code: str, timeout: int = 30):
         return None, {}
 
 
+def _fetch_btg_etf_xlsx(cesta_id: int, timeout: int = 30):
+    """Baixa a composição OFICIAL de um ETF da BTG Pactual Asset (ex.: AUVP11) direto do
+    gestor — https://www.btgpactual.com/etf/api/Composicao/DownloadCesta?ID={cesta_id} — um
+    XLSX. Mais confiável que a API genérica de índice da B3 (que só cobre índices "próprios"
+    da bolsa, não necessariamente os de terceiros como o IAFD).
+
+    Estrutura REAL confirmada (planilha 'CestaIntegralizacao' de uma cesta de integralização
+    real do AUVP11, 33 ativos): 4 linhas em branco, depois o cabeçalho
+    'TICKER '|'ATIVO '|'QUANTIDADE '|'PREÇO DE ABERTURA (R$) '|'PESO (%) ' (repare nos espaços
+    à direita nos nomes das colunas), com os dados logo abaixo. Localiza o cabeçalho pela
+    palavra 'TICKER' (ao invés de assumir a linha fixa — arquivos de datas diferentes podem
+    ter blocos de cabeçalho de tamanho diferente) e lê a coluna correspondente."""
+    try:
+        import io
+        import openpyxl
+        import requests
+        url = f"https://www.btgpactual.com/etf/api/Composicao/DownloadCesta?ID={cesta_id}"
+        headers = {"User-Agent": "Mozilla/5.0 (screener-b3)"}
+        r = requests.get(url, headers=headers, timeout=timeout)
+        r.raise_for_status()
+        wb = openpyxl.load_workbook(io.BytesIO(r.content), data_only=True)
+        ws = wb.active
+        linhas = list(ws.iter_rows(values_only=True))
+        col_ticker = None
+        inicio = None
+        for i, row in enumerate(linhas):
+            for j, cell in enumerate(row):
+                if cell and "TICKER" in str(cell).strip().upper():
+                    col_ticker, inicio = j, i + 1
+                    break
+            if col_ticker is not None:
+                break
+        if col_ticker is None:
+            print(f"[universo] BTG (cesta {cesta_id}): coluna 'TICKER' não encontrada no "
+                  f"XLSX — layout pode ter mudado.")
+            return None, {}
+        tickers = []
+        for row in linhas[inicio:]:
+            if col_ticker >= len(row) or row[col_ticker] is None:
+                continue
+            s = str(row[col_ticker]).strip().upper()
+            if _TICKER_RE.match(s):
+                tickers.append(s)
+        tickers = _dedup(tickers)
+        return (tickers if tickers else None), {}
+    except Exception as e:
+        print(f"[universo] falha ao baixar composição BTG (cesta {cesta_id}: {e}) — "
+              f"tentando API B3, depois lista estática.")
+        return None, {}
+
+
 _ISHARES_SECTORS: dict[str, str] = {}
 
 
@@ -217,31 +268,38 @@ def get_universe(which: str = "both") -> dict[str, list[str]]:
             if origem not in g:
                 g.append(origem)
 
-    # cada item: (origem, fonte, referência p/ a fonte, lista estática de fallback)
+    # cada item: (origem, [(fonte, referência), ...] em ORDEM de tentativa, lista estática)
     #   fonte "ishares" -> referência = URL do CSV; fonte "b3api" -> referência = código do
-    #   índice na B3 (ex.: "IDIV")
+    #   índice na B3 (ex.: "IDIV"); fonte "btg_xlsx" -> referência = ID da cesta no site do
+    #   gestor (mais confiável p/ ETFs de terceiros, que a API genérica da B3 pode não cobrir)
     plan = []
     if which in ("ibov", "both"):
-        plan.append(("BOVA11", "ishares", BOVA11_URL, IBOV))
+        plan.append(("BOVA11", [("ishares", BOVA11_URL)], IBOV))
     if which in ("smll", "both"):
-        plan.append(("SMALL11", "ishares", SMAL11_URL, SMLL))
-    plan.append(("DIVO11", "b3api", "IDIV", IDIV))  # sempre incluído
-    plan.append(("AUVP11", "b3api", "IAFD", AUVP))  # sempre incluído
+        plan.append(("SMALL11", [("ishares", SMAL11_URL)], SMLL))
+    plan.append(("DIVO11", [("b3api", "IDIV")], IDIV))                       # sempre incluído
+    plan.append(("AUVP11", [("btg_xlsx", 109), ("b3api", "IAFD")], AUVP))    # sempre incluído
+
+    _FONTE_TXT = {"ishares": "iShares (composição oficial)",
+                 "b3api": "API oficial da B3 (composição oficial)",
+                 "btg_xlsx": "planilha oficial do gestor — BTG Pactual (composição oficial)"}
 
     _ISHARES_SECTORS.clear()
-    for origem, fonte, ref, estatica in plan:
-        if static_only:
-            tks, setores = None, {}
-        elif fonte == "ishares":
-            tks, setores = _fetch_ishares_tickers(ref)
-        elif fonte == "b3api":
-            tks, setores = _fetch_b3_index_portfolio(ref)
-        else:
-            tks, setores = None, {}
+    for origem, fontes, estatica in plan:
+        tks, setores, fonte_usada = None, {}, None
+        if not static_only:
+            for fonte, ref in fontes:
+                if fonte == "ishares":
+                    tks, setores = _fetch_ishares_tickers(ref)
+                elif fonte == "b3api":
+                    tks, setores = _fetch_b3_index_portfolio(ref)
+                elif fonte == "btg_xlsx":
+                    tks, setores = _fetch_btg_etf_xlsx(ref)
+                if tks:
+                    fonte_usada = fonte
+                    break                                  # achou — não tenta as próximas
         if tks:
-            fonte_txt = "iShares (composição oficial)" if fonte == "ishares" \
-                else "API oficial da B3 (composição oficial)"
-            print(f"[universo] {origem}: {len(tks)} ativos da {fonte_txt}.")
+            print(f"[universo] {origem}: {len(tks)} ativos da {_FONTE_TXT[fonte_usada]}.")
             _add(tks, origem)
             _ISHARES_SECTORS.update(setores)
         else:
