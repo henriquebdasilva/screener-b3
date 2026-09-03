@@ -722,10 +722,16 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                                                cache_path=f"{outdir}/.historico_bdi.json")
                 _fx = (macro_data or {}).get("fluxo_estrangeiro") or {}
                 _oi_merc = ((opcoes_data or {}).get("oi") or {}).get("mercado") or {}
+                _pc_vol_merc = ((opcoes_data or {}).get("mercado") or {}).get("pc_ratio")
+                _breadth_bova = ((humor or {}).get("indices") or {}).get("BOVA11") or {}
+                _breadth_small = ((humor or {}).get("indices") or {}).get("SMALL11") or {}
                 hist_bdi = atualizar_historico_bdi(
                     fluxo_dia=_fx.get("dia"), fluxo_acum_mes=_fx.get("acum_mes") or _fx.get("mes"),
                     oi_pc_mercado=_oi_merc.get("oi_ratio"), data_ref=_fx.get("data"),
-                    cache_path=f"{outdir}/.historico_bdi.json", manter=historico_janela)
+                    cache_path=f"{outdir}/.historico_bdi.json", manter=historico_janela,
+                    pc_vol_mercado=_pc_vol_merc,
+                    breadth_bova11_alta=_breadth_bova.get("alta"),
+                    breadth_small11_alta=_breadth_small.get("alta"))
                 macro_data["historico_bdi"] = hist_bdi
             except Exception as e:
                 print(f"[bdi_indices] histórico: {e}")

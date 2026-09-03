@@ -465,9 +465,13 @@ def _historico_chart(hist: list) -> str:
             + img_fluxo + img_oi)
 
 
-def _ranking_opcoes(opcoes: dict = None) -> str:
+def _ranking_opcoes(opcoes: dict = None, hist: list = None) -> str:
     """Dois gráficos de barras (ranking, top-10): opções mais negociadas do dia por VOLUME
-    financeiro (COTAHIST) e por NÚMERO DE POSIÇÕES EM ABERTO — open interest (BDI)."""
+    financeiro (COTAHIST) e por NÚMERO DE POSIÇÕES EM ABERTO — open interest (BDI). Se `hist`
+    (histórico de dias anteriores) for passado, mostra também a EVOLUÇÃO do Put/Call por
+    volume do mercado nos últimos dias — dá noção de tendência de curto prazo (o ranking do
+    dia sozinho é uma fotografia; a série mostra se o mercado está ficando mais defensivo ou
+    mais comprado nas últimas sessões)."""
     if not opcoes:
         return ""
     top_vol = opcoes.get("top_negociadas") or []
@@ -486,6 +490,12 @@ def _ranking_opcoes(opcoes: dict = None) -> str:
         return f"{d.get('base', '?')} {tp} {st_txt}"
 
     partes = [_secbar("Opções — rankings do dia")]
+    pc_vals = [d.get("pc_vol_mercado") for d in (hist or [])]
+    if hist and any(v is not None for v in pc_vals):
+        dias = [d.get("data", "")[5:] for d in hist]
+        partes.append(charts.barras_verticais(
+            dias, pc_vals, titulo="Tendência — P/C por volume (mercado), últimos dias",
+            ylabel="razão", cor_por_sinal=False, linha_referencia=1.0, fmt_valor="{:.2f}"))
     if top_vol:
         labels = [rotulo(d) for d in top_vol[:10]]
         vols = [d.get("volume", 0) for d in top_vol[:10]]
@@ -510,7 +520,7 @@ def _ranking_opcoes(opcoes: dict = None) -> str:
     return "".join(partes)
 
 
-def _mood_block(mood: dict, opcoes: dict = None) -> str:
+def _mood_block(mood: dict, opcoes: dict = None, hist: list = None) -> str:
     if not mood or (not mood.get("indices") and not mood.get("setores")):
         return ""
     por_setor = (opcoes or {}).get("por_setor") or {}
@@ -567,11 +577,29 @@ def _mood_block(mood: dict, opcoes: dict = None) -> str:
         termo += ('<p class="sub" style="margin:-6px 0 8px">Puts ÷ calls. &gt;1 = mais '
                  'proteção/baixa; &lt;1 = mais aposta em alta. Volume = giro do dia; '
                  'posições = open interest (contratos em aberto, mais estrutural).</p>')
+    tendencia_html = ""
+    bova_vals = [d.get("breadth_bova11_alta") for d in (hist or [])]
+    small_vals = [d.get("breadth_small11_alta") for d in (hist or [])]
+    if hist and (any(v is not None for v in bova_vals) or any(v is not None for v in small_vals)):
+        try:
+            import charts
+            dias = [d.get("data", "")[5:] for d in hist]
+            tendencia_html = (
+                '<h3 style="' + _H3 + '">Tendência — % dos papéis em alta (MM21), '
+                'últimos dias</h3>'
+                + charts.barras_verticais(dias, bova_vals, titulo="BOVA11 — % em alta",
+                                          ylabel="%", cor_por_sinal=False, cor_fixa="#1f3864",
+                                          fmt_valor="{:.0f}%")
+                + charts.barras_verticais(dias, small_vals, titulo="SMALL11 — % em alta",
+                                          ylabel="%", cor_por_sinal=False, cor_fixa="#7c3aed",
+                                          fmt_valor="{:.0f}%"))
+        except Exception:
+            pass
     return (_secbar("Humor do mercado")
             + f'<p class="sub" style="margin:0 0 6px">Percentual dos papéis do universo '
             f'(BOVA11 + SMALL11) em alta/lateral/baixa pela média móvel de 21 pregões'
             f'{", com o Put/Call ratio por índice e por setor" if tem_pc else ""}.</p>'
-            f'{termo}<table>{head}{"".join(rows)}</table>')
+            f'{termo}<table>{head}{"".join(rows)}</table>{tendencia_html}')
 
 
 _SECTOR_MED = {}
@@ -985,7 +1013,8 @@ def build_html(selecionados: pd.DataFrame, hoje: str, meta: dict,
         resumo_kpi = ""
     topo = (resumo_kpi + painel + _market_block(market, macro, opcoes)
             + _historico_chart((macro or {}).get("historico_bdi"))
-            + _ranking_opcoes(opcoes) + _mood_block(mood, opcoes))
+            + _ranking_opcoes(opcoes, (macro or {}).get("historico_bdi"))
+            + _mood_block(mood, opcoes, (macro or {}).get("historico_bdi")))
     def _suf(g):
         p = group_pct.get(g) if isinstance(group_pct, dict) else group_pct
         return f" ({p}% de maior score)" if p else ""
@@ -1156,7 +1185,7 @@ def build_email_body(hoje: str, meta: dict, market: dict, mood: dict, n_sel: int
         f'<p class="sub" style="margin:0 0 14px">{_fmt_date(hoje)}</p>'
         f"{painel}{_market_block(market, macro, opcoes)}"
         f"{_historico_chart((macro or {}).get('historico_bdi'))}"
-        f"{_ranking_opcoes(opcoes)}"
+        f"{_ranking_opcoes(opcoes, (macro or {}).get('historico_bdi'))}"
         f'<p style="margin:12px 0 6px"><b>{n_sel} papéis</b> passaram no corte '
         f'fundamentalista hoje ({n_graf} com oportunidade gráfica). O detalhamento — '
         f'fundamentos, preço &amp; risco e preços-teto por papel — está no {anexos}, '

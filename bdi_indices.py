@@ -378,13 +378,17 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
 
 
 def atualizar_historico_bdi(fluxo_dia=None, fluxo_acum_mes=None, oi_pc_mercado=None,
-                            data_ref=None, cache_path: str = None, manter: int = 15) -> list:
+                            data_ref=None, cache_path: str = None, manter: int = 15,
+                            **extras) -> list:
     """Mantém um histórico ROLANTE dos últimos `manter` BDIs (default 15) com o fluxo
-    estrangeiro do dia e o Put/Call de posições em aberto (open interest) do mercado — para o
-    gráfico de evolução. Cada execução grava/atualiza a entrada do dia corrente (idempotente:
-    rodar de novo no mesmo dia sobrescreve, não duplica). Retorna a lista ordenada por data
-    (mais antiga primeiro). Cache persiste via os relatórios versionados no repo (mesmo
-    mecanismo do cache de fluxo — env HIST_BDI_PATH, default 'reports/.historico_bdi.json')."""
+    estrangeiro do dia, o Put/Call de posições em aberto (open interest) do mercado, e
+    quaisquer campos extras passados em `**extras` (ex.: pc_vol_mercado, breadth_bova11_alta,
+    breadth_small11_alta) — para os gráficos de evolução/tendência de curto prazo. Cada
+    execução grava/atualiza a entrada do dia corrente (idempotente: rodar de novo no mesmo
+    dia sobrescreve, não duplica; campos não informados numa execução preservam o valor já
+    salvo de execuções anteriores no mesmo dia, em vez de apagar). Retorna a lista ordenada
+    por data (mais antiga primeiro). Cache persiste via os relatórios versionados no repo
+    (env HIST_BDI_PATH, default 'reports/.historico_bdi.json')."""
     cache_path = cache_path or os.getenv("HIST_BDI_PATH", "reports/.historico_bdi.json")
     cache_abs = os.path.abspath(cache_path)
     hist = []
@@ -400,19 +404,16 @@ def atualizar_historico_bdi(fluxo_dia=None, fluxo_acum_mes=None, oi_pc_mercado=N
         print(f"[bdi_indices] histórico: falha ao ler {cache_abs}: {e}")
     data_ref = data_ref or dt.date.today()
     ds = data_ref.isoformat() if hasattr(data_ref, "isoformat") else str(data_ref)
-    hist = [d for d in hist if d.get("data") != ds]        # remove duplicata do mesmo dia
-    novo = {"data": ds}
-    if fluxo_dia is not None:
-        novo["fluxo_dia"] = fluxo_dia
-    if fluxo_acum_mes is not None:
-        novo["fluxo_acum_mes"] = fluxo_acum_mes
-    if oi_pc_mercado is not None:
-        novo["oi_pc_mercado"] = oi_pc_mercado
-    if len(novo) > 1:                                       # só grava se tiver algo além da data
+    campos = {"fluxo_dia": fluxo_dia, "fluxo_acum_mes": fluxo_acum_mes,
+             "oi_pc_mercado": oi_pc_mercado, **extras}
+    campos = {k: v for k, v in campos.items() if v is not None}
+    existente = next((d for d in hist if d.get("data") == ds), None)
+    hist = [d for d in hist if d.get("data") != ds]         # remove p/ substituir abaixo
+    novo = {"data": ds, **(existente or {}), **campos}      # preserva o que já tinha, atualiza
+    if len(novo) > 1:                                        # tem algo além da data
         hist.append(novo)
     else:
-        print(f"[bdi_indices] histórico: nada p/ gravar hoje ({ds}) — fluxo_dia, "
-              f"fluxo_acum_mes e oi_pc_mercado vieram todos None")
+        print(f"[bdi_indices] histórico: nada p/ gravar hoje ({ds}) — todos os campos vieram None")
     hist.sort(key=lambda d: d["data"])
     hist = hist[-manter:]
     try:
