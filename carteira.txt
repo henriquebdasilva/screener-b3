@@ -6,4 +6,6 @@ IRBR3, 57.62
 AXIA3, 59.55
 WEGE3, 49.82
 POMO4, 4.45
+LAVV3, 10.43
+CXSE3, 19.51
 # TAEE11            # sem preço médio -> mostra só os dados/teto/IA
