@@ -20,7 +20,7 @@ import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-09-04-historico-conta-pra-tras"   # marcador de versão (aparece no log)
+__build__ = "2026-09-04c-data-real-do-fluxo-nao-data-do-arquivo"   # marcador de versão (aparece no log)
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -169,10 +169,30 @@ def parse_ifix(texto=None, linhas=None) -> dict | None:
 def parse_fluxo_acumulado(texto=None, linhas=None) -> dict | None:
     """Extrai 'Participação dos Investidores' (compras/vendas ACUMULADAS do mês) do
     Investidor Estrangeiro. Aceita `linhas` (coordenadas, formato (pi,y,[(x,texto),...]) de
-    _pdf_lines) ou `texto` corrido. O BDI publica a coluna em 'R$ MIL' — convertemos para
-    R$ MILHÕES aqui (÷1000) para bater com o rótulo 'R$ mi' usado no relatório; sem essa
-    conversão o valor aparecia 1000x maior do que deveria (ex.: '-18.697.049 R$ mi' em vez de
-    '-18.697 R$ mi', quando na real R$ mil já é o valor bruto, ~R$18,7 bi)."""
+    _pdf_lines) ou `texto` corrido — ou os DOIS juntos (compras/vendas via `linhas` se vier,
+    mas a data real sempre via `texto` se disponível). O BDI publica a coluna em 'R$ MIL' —
+    convertemos para R$ MILHÕES aqui (÷1000) para bater com o rótulo 'R$ mi' usado no
+    relatório; sem essa conversão o valor aparecia 1000x maior do que deveria (ex.:
+    '-18.697.049 R$ mi' em vez de '-18.697 R$ mi', quando na real R$ mil já é o valor bruto,
+    ~R$18,7 bi).
+
+    IMPORTANTE — a data real dos dados NÃO é a data do arquivo: a seção 'Participação dos
+    Investidores' do BDI vem com 2-4 pregões de ATRASO (confirmado com arquivos reais: o
+    boletim 'de 31/08' carrega dados 'do início do mês até o dia 27/08'; o 'de 01/09' carrega
+    'até o dia 28/08'). Por isso extraímos a data real de dentro do texto ("até o dia
+    DD/MM/AAAA") em vez de assumir que é a data do arquivo baixado — usar a data do arquivo
+    aqui causava deltas errados e a impressão de que o fluxo "não avançava"."""
+    def _extrai_data_base(txt):
+        if not txt:
+            return None
+        dm = re.search(r"até o dia (\d{2}/\d{2}/\d{4})", txt)
+        if not dm:
+            return None
+        try:
+            return dt.datetime.strptime(dm.group(1), "%d/%m/%Y").date()
+        except Exception:
+            return None
+
     if linhas:
         for _, _, cells_xy in linhas:
             cells = [t for _, t in cells_xy] if cells_xy and isinstance(cells_xy[0], tuple) \
@@ -186,7 +206,8 @@ def parse_fluxo_acumulado(texto=None, linhas=None) -> dict | None:
                         compras, vendas = nums[0], nums[2]
                     compras, vendas = compras / 1000.0, vendas / 1000.0    # R$ mil -> R$ mi
                     return {"compras_acum_mes": compras, "vendas_acum_mes": vendas,
-                            "saldo_acum_mes": compras - vendas, "data_base": None}
+                            "saldo_acum_mes": compras - vendas,
+                            "data_base": _extrai_data_base(texto)}
         return None
     if texto:
         m = re.search(r"Investidor Estrangeiro\s+([\d.,]+)\s+([\d,]+)\s+([\d.,]+)\s+([\d,]+)",
@@ -197,15 +218,8 @@ def parse_fluxo_acumulado(texto=None, linhas=None) -> dict | None:
         if compras is None or vendas is None:
             return None
         compras, vendas = compras / 1000.0, vendas / 1000.0                # R$ mil -> R$ mi
-        dm = re.search(r"até o dia (\d{2}/\d{2}/\d{4})", texto)
-        data_base = None
-        if dm:
-            try:
-                data_base = dt.datetime.strptime(dm.group(1), "%d/%m/%Y").date()
-            except Exception:
-                pass
         return {"compras_acum_mes": compras, "vendas_acum_mes": vendas,
-                "saldo_acum_mes": compras - vendas, "data_base": data_base}
+                "saldo_acum_mes": compras - vendas, "data_base": _extrai_data_base(texto)}
     return None
 
 
@@ -306,7 +320,7 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
         return None
     acc = None
     try:
-        acc = parse_fluxo_acumulado(linhas=_pdf_lines(raw))
+        acc = parse_fluxo_acumulado(linhas=_pdf_lines(raw), texto=texto)
     except Exception as e:
         print(f"[bdi_indices] fluxo estrangeiro: parser por coordenadas falhou ({e}); "
               f"tentando texto corrido.")
@@ -491,57 +505,100 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
             hist_atual = json.load(f).get("dias", [])
     except Exception:
         pass
-    if len(hist_atual) >= janela:
-        print(f"[bdi_indices] histórico retroativo: já tem {len(hist_atual)}/{janela} dias "
-              f"salvos — sem necessidade de buscar retroativamente.")
-        return hist_atual
 
-    print(f"[bdi_indices] histórico retroativo: só {len(hist_atual)}/{janela} dias salvos — "
-          f"buscando os últimos {janela} pregões (fluxo estrangeiro + OI Put/Call)...")
+    def _cobertura(campo):
+        return sum(1 for d in hist_atual if d.get(campo) is not None)
+
+    cob_fluxo = _cobertura("fluxo_acum_mes")
+    cob_oi = _cobertura("oi_pc_mercado")
+    cob_pcvol = _cobertura("pc_vol_mercado")
+    precisa_fluxo = cob_fluxo < janela
+    precisa_oi = cob_oi < janela
+    precisa_pcvol = cob_pcvol < janela
+    if not (precisa_fluxo or precisa_oi or precisa_pcvol):
+        print(f"[bdi_indices] histórico retroativo: já tem {len(hist_atual)}/{janela} dias "
+              f"salvos, com fluxo/OI/P-C-volume todos cobertos — sem necessidade de buscar "
+              f"retroativamente.")
+        return hist_atual
+    print(f"[bdi_indices] histórico retroativo: cobertura atual — fluxo {cob_fluxo}/{janela}, "
+          f"OI {cob_oi}/{janela}, P/C volume {cob_pcvol}/{janela} — buscando o que falta "
+          f"(até {janela} pregões)...")
 
     # 1) FLUXO ESTRANGEIRO: precisa de janela+1 acumulados p/ calcular janela deltas
     acumulados = {}                                        # 'AAAA-MM-DD' -> saldo_acum_mes
-    d, tentativas = dt.date.today(), 0
-    while len(acumulados) < janela + 1 and tentativas < max_calendario:
-        raw, texto = _fetch_bdi_data_especifica(d, capitulo="02")
-        if raw:
-            acc = None
-            try:
-                acc = parse_fluxo_acumulado(linhas=_pdf_lines(raw))
-            except Exception:
-                pass
-            if not acc:
-                acc = parse_fluxo_acumulado(texto=texto)
-            if acc:
-                acumulados[d.isoformat()] = acc["saldo_acum_mes"]
-        d -= dt.timedelta(days=1)
-        tentativas += 1
-    print(f"[bdi_indices] histórico retroativo: fluxo — {len(acumulados)} dias de acumulado "
-          f"encontrados em {tentativas} tentativas de calendário.")
+    if precisa_fluxo:
+        d, tentativas = dt.date.today(), 0
+        while len(acumulados) < janela + 1 and tentativas < max_calendario:
+            raw, texto = _fetch_bdi_data_especifica(d, capitulo="02")
+            if raw:
+                acc = None
+                try:
+                    acc = parse_fluxo_acumulado(linhas=_pdf_lines(raw), texto=texto)
+                except Exception:
+                    pass
+                if not acc:
+                    acc = parse_fluxo_acumulado(texto=texto)
+                if acc:
+                    # a data REAL dos dados (extraída do texto: 'até o dia DD/MM/AAAA') pode
+                    # ser vários pregões anterior à data do ARQUIVO — a seção 'Participação
+                    # dos Investidores' do BDI vem atrasada (confirmado com arquivos reais).
+                    # Usa a data real como chave; só cai pra data do arquivo se não achou.
+                    data_real = acc.get("data_base") or d
+                    acumulados[data_real.isoformat()] = acc["saldo_acum_mes"]
+            d -= dt.timedelta(days=1)
+            tentativas += 1
+        print(f"[bdi_indices] histórico retroativo: fluxo — {len(acumulados)} dias de "
+              f"acumulado encontrados em {tentativas} tentativas de calendário.")
 
     # 2) OI PUT/CALL DO MERCADO: 1 retrato por dia (não precisa de dia anterior)
     ois = {}
-    try:
-        from posicoes import parse_oi_pdf, oi_ratios
-        d, tentativas = dt.date.today(), 0
-        while len(ois) < janela and tentativas < max_calendario:
-            raw_oi, _ = _fetch_bdi_data_especifica(d, capitulo="03-4", exigir_marco=False)
-            if raw_oi:
+    if precisa_oi:
+        try:
+            from posicoes import parse_oi_pdf, oi_ratios
+            d, tentativas = dt.date.today(), 0
+            while len(ois) < janela and tentativas < max_calendario:
+                raw_oi, _ = _fetch_bdi_data_especifica(d, capitulo="03-4", exigir_marco=False)
+                if raw_oi:
+                    try:
+                        pos = parse_oi_pdf(raw_oi)
+                        if pos:
+                            r_oi = oi_ratios(pos, ticker_setor=ticker_setor)
+                            pc = (r_oi.get("mercado") or {}).get("oi_ratio")
+                            if pc is not None and not (isinstance(pc, float) and math.isnan(pc)):
+                                ois[d.isoformat()] = pc
+                    except Exception as e:
+                        print(f"[bdi_indices] histórico retroativo: falha ao parsear OI de "
+                              f"{d}: {e}")
+                d -= dt.timedelta(days=1)
+                tentativas += 1
+            print(f"[bdi_indices] histórico retroativo: OI — {len(ois)} dias encontrados em "
+                  f"{tentativas} tentativas de calendário.")
+        except Exception as e:
+            print(f"[bdi_indices] histórico retroativo: OI indisponível ({e}) — só fluxo.")
+
+    # 3) P/C POR VOLUME DO MERCADO: 1 retrato por dia, via COTAHIST (arquivo diário da B3,
+    # DIFERENTE do BDI — é o mesmo arquivo que o opcoes.py já usa no dia a dia)
+    pcs_vol = {}
+    if precisa_pcvol:
+        try:
+            from opcoes import _baixar_cotahist, parse_cotahist
+            d, tentativas = dt.date.today(), 0
+            while len(pcs_vol) < janela and tentativas < max_calendario:
                 try:
-                    pos = parse_oi_pdf(raw_oi)
-                    if pos:
-                        r_oi = oi_ratios(pos, ticker_setor=ticker_setor)
-                        pc = (r_oi.get("mercado") or {}).get("oi_ratio")
-                        if pc is not None and not (isinstance(pc, float) and math.isnan(pc)):
-                            ois[d.isoformat()] = pc
-                except Exception as e:
-                    print(f"[bdi_indices] histórico retroativo: falha ao parsear OI de {d}: {e}")
-            d -= dt.timedelta(days=1)
-            tentativas += 1
-        print(f"[bdi_indices] histórico retroativo: OI — {len(ois)} dias encontrados em "
-              f"{tentativas} tentativas de calendário.")
-    except Exception as e:
-        print(f"[bdi_indices] histórico retroativo: OI indisponível ({e}) — só fluxo.")
+                    texto = _baixar_cotahist(d)
+                    opts, _ = parse_cotahist(texto)
+                    call_vol = sum(o["volume"] for o in opts if o["tipo"] == "C")
+                    put_vol = sum(o["volume"] for o in opts if o["tipo"] == "P")
+                    if call_vol > 0:
+                        pcs_vol[d.isoformat()] = put_vol / call_vol
+                except Exception:
+                    pass                                   # dia sem pregão/arquivo -> ignora
+                d -= dt.timedelta(days=1)
+                tentativas += 1
+            print(f"[bdi_indices] histórico retroativo: P/C volume — {len(pcs_vol)} dias "
+                  f"encontrados em {tentativas} tentativas de calendário.")
+        except Exception as e:
+            print(f"[bdi_indices] histórico retroativo: P/C volume indisponível ({e}).")
 
     # 3) monta as entradas: fluxo_dia = diferença entre acumulados CONSECUTIVOS (mesmo mês)
     datas_ordenadas = sorted(acumulados.keys())
@@ -556,6 +613,8 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
         novo[ds] = entry
     for ds, pc in ois.items():
         novo.setdefault(ds, {"data": ds})["oi_pc_mercado"] = pc
+    for ds, pc in pcs_vol.items():
+        novo.setdefault(ds, {"data": ds})["pc_vol_mercado"] = pc
 
     # funde com o que já existia no cache (existente tem prioridade sobre o retroativo)
     por_data = {e["data"]: dict(e) for e in hist_atual}
