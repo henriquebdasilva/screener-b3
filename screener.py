@@ -725,9 +725,16 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                 _pc_vol_merc = ((opcoes_data or {}).get("mercado") or {}).get("pc_ratio")
                 _breadth_bova = ((humor or {}).get("indices") or {}).get("BOVA11") or {}
                 _breadth_small = ((humor or {}).get("indices") or {}).get("SMALL11") or {}
+                # data_ref = HOJE (dia real da execução), não a data que o fluxo representa
+                # (que fica 2-4 pregões atrasada — ver parse_fluxo_acumulado). OI, P/C volume
+                # e amplitude (breadth) são FRESCOS todo dia; se usássemos a data atrasada do
+                # fluxo como chave pra tudo, esses campos frescos ficariam presos/repetindo a
+                # mesma data atrasada em vez de avançar dia a dia. O histórico representa "o
+                # que sabíamos no dia do relatório", não "a data que cada dado individualmente
+                # descreve" (essa já aparece separada, ao lado do valor, no Panorama macro).
                 hist_bdi = atualizar_historico_bdi(
                     fluxo_dia=_fx.get("dia"), fluxo_acum_mes=_fx.get("acum_mes") or _fx.get("mes"),
-                    oi_pc_mercado=_oi_merc.get("oi_ratio"), data_ref=_fx.get("data"),
+                    oi_pc_mercado=_oi_merc.get("oi_ratio"), data_ref=dt.date.today(),
                     cache_path=f"{outdir}/.historico_bdi.json", manter=historico_janela,
                     pc_vol_mercado=_pc_vol_merc,
                     breadth_bova11_alta=_breadth_bova.get("alta"),

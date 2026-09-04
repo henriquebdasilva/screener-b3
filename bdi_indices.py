@@ -20,7 +20,7 @@ import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-09-04c-data-real-do-fluxo-nao-data-do-arquivo"   # marcador de versão (aparece no log)
+__build__ = "2026-09-04d-chave-e-dia-do-relatorio"   # marcador de versão (aparece no log)
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -524,8 +524,13 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
           f"OI {cob_oi}/{janela}, P/C volume {cob_pcvol}/{janela} — buscando o que falta "
           f"(até {janela} pregões)...")
 
-    # 1) FLUXO ESTRANGEIRO: precisa de janela+1 acumulados p/ calcular janela deltas
-    acumulados = {}                                        # 'AAAA-MM-DD' -> saldo_acum_mes
+    # 1) FLUXO ESTRANGEIRO: precisa de janela+1 acumulados p/ calcular janela deltas.
+    # Chave = data do ARQUIVO (representa "o dia em que um relatório teria sido gerado"),
+    # não a data real dos dados (que fica atrasada 2-4 pregões — ver parse_fluxo_acumulado).
+    # Isso mantém consistência com o histórico "ao vivo" (atualizar_historico_bdi chamado do
+    # screener.py com data_ref=hoje) — o histórico representa "o que sabíamos em cada dia",
+    # não "a data que cada dado individualmente descreve".
+    acumulados = {}                          # 'AAAA-MM-DD do arquivo' -> (data_real, saldo)
     if precisa_fluxo:
         d, tentativas = dt.date.today(), 0
         while len(acumulados) < janela + 1 and tentativas < max_calendario:
@@ -539,12 +544,8 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
                 if not acc:
                     acc = parse_fluxo_acumulado(texto=texto)
                 if acc:
-                    # a data REAL dos dados (extraída do texto: 'até o dia DD/MM/AAAA') pode
-                    # ser vários pregões anterior à data do ARQUIVO — a seção 'Participação
-                    # dos Investidores' do BDI vem atrasada (confirmado com arquivos reais).
-                    # Usa a data real como chave; só cai pra data do arquivo se não achou.
                     data_real = acc.get("data_base") or d
-                    acumulados[data_real.isoformat()] = acc["saldo_acum_mes"]
+                    acumulados[d.isoformat()] = (data_real, acc["saldo_acum_mes"])
             d -= dt.timedelta(days=1)
             tentativas += 1
         print(f"[bdi_indices] histórico retroativo: fluxo — {len(acumulados)} dias de "
@@ -600,16 +601,21 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
         except Exception as e:
             print(f"[bdi_indices] histórico retroativo: P/C volume indisponível ({e}).")
 
-    # 3) monta as entradas: fluxo_dia = diferença entre acumulados CONSECUTIVOS (mesmo mês)
-    datas_ordenadas = sorted(acumulados.keys())
+    # 3) monta as entradas: fluxo_dia = diferença entre acumulados CONSECUTIVOS, usando as
+    # DATAS REAIS (não as datas de arquivo) pra decidir "mesmo mês" e "é dado novo mesmo" —
+    # mas a entrada final fica salva sob a data do ARQUIVO (dia do relatório).
+    datas_ordenadas = sorted(acumulados.keys())              # datas de ARQUIVO
     novo = {}
     for i, ds in enumerate(datas_ordenadas):
-        entry = {"data": ds, "fluxo_acum_mes": acumulados[ds]}
+        data_real_cur, saldo_cur = acumulados[ds]
+        entry = {"data": ds, "fluxo_acum_mes": saldo_cur}
         if i > 0:
-            d_prev = dt.date.fromisoformat(datas_ordenadas[i - 1])
-            d_cur = dt.date.fromisoformat(ds)
-            if d_prev.year == d_cur.year and d_prev.month == d_cur.month:
-                entry["fluxo_dia"] = acumulados[ds] - acumulados[datas_ordenadas[i - 1]]
+            data_real_prev, saldo_prev = acumulados[datas_ordenadas[i - 1]]
+            mesmo_mes = (data_real_prev.year == data_real_cur.year
+                        and data_real_prev.month == data_real_cur.month)
+            avancou = data_real_cur > data_real_prev      # evita delta=0 quando a data
+            if mesmo_mes and avancou:                      # real repete entre 2 arquivos
+                entry["fluxo_dia"] = saldo_cur - saldo_prev
         novo[ds] = entry
     for ds, pc in ois.items():
         novo.setdefault(ds, {"data": ds})["oi_pc_mercado"] = pc
