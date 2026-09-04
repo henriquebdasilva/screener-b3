@@ -733,6 +733,15 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                     breadth_bova11_alta=_breadth_bova.get("alta"),
                     breadth_small11_alta=_breadth_small.get("alta"))
                 macro_data["historico_bdi"] = hist_bdi
+                # se hoje não tem 'dia' (BDI ainda incompleto/repetido), busca no histórico o
+                # último dia que TEVE um valor real, pra mostrar isso em vez de 'n/d' — mesma
+                # filosofia do histórico: conta a partir do último dado disponível, pra trás.
+                if _fx.get("dia") is None and isinstance(macro_data.get("fluxo_estrangeiro"), dict):
+                    for entry in reversed(hist_bdi):
+                        if entry.get("fluxo_dia") is not None:
+                            macro_data["fluxo_estrangeiro"]["dia_fallback"] = {
+                                "valor": entry["fluxo_dia"], "data": entry["data"]}
+                            break
             except Exception as e:
                 print(f"[bdi_indices] histórico: {e}")
             n_graf = int((selecionados["oportunidade_grafica"] != "Não").sum()) \

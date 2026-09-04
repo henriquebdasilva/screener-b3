@@ -325,13 +325,33 @@ def render_panel(macro: dict, regime: dict) -> str:
                          f"<span style='color:{cor}'>{dia:+,.0f}</span> R$ mi{extra_fx}",
                          _fmt_d(fx.get("data")), ""))
     elif fx and fx.get("acum_mes") is not None:
-        # 1º dia do mês ou 1ª execução: ainda sem o valor isolado do dia, mas já dá o acumulado
         acc = fx["acum_mes"]
         cor = "#16a34a" if acc >= 0 else "#dc2626"
-        rows.append(_row("Fluxo estrangeiro (B3)",
-                         f"acum. mês <span style='color:{cor}'>{acc:+,.0f}</span> R$ mi "
-                         f"<span class='sub'>(dia disponível amanhã)</span>",
-                         _fmt_d(fx.get("data")), ""))
+        fb = fx.get("dia_fallback")
+        if fb and fb.get("valor") is not None:
+            # BDI de hoje ainda incompleto/repetido: mostra o ÚLTIMO dia que teve dado real,
+            # rotulado com a data dele (não finge que é de hoje) — em vez de 'n/d'. A data no
+            # histórico vem como string ISO ('AAAA-MM-DD'), não objeto date — converte antes
+            # de formatar.
+            data_fb = fb.get("data")
+            try:
+                data_fb = dt.datetime.strptime(data_fb, "%Y-%m-%d").date() if isinstance(
+                    data_fb, str) else data_fb
+            except Exception:
+                data_fb = None
+            cor_fb = "#16a34a" if fb["valor"] >= 0 else "#dc2626"
+            rows.append(_row(
+                "Fluxo estrangeiro (B3)",
+                f"<span style='color:{cor_fb}'>{fb['valor']:+,.0f}</span> R$ mi "
+                f"<span class='sub'>(último dado disp., {_fmt_d(data_fb)})</span> · "
+                f"acum. mês <span style='color:{cor}'>{acc:+,.0f}</span> R$ mi",
+                _fmt_d(fx.get("data")), ""))
+        else:
+            # 1º dia do mês ou 1ª execução de todas: nem o histórico tem um valor pra usar
+            rows.append(_row("Fluxo estrangeiro (B3)",
+                             f"acum. mês <span style='color:{cor}'>{acc:+,.0f}</span> R$ mi "
+                             f"<span class='sub'>(dia disponível amanhã)</span>",
+                             _fmt_d(fx.get("data")), ""))
     else:
         rows.append(_row("Fluxo estrangeiro (B3)", "n/d", "", ""))
 

@@ -20,7 +20,7 @@ import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-09-01g-janela15-graficos-matplotlib"   # marcador de versão (aparece no log)
+__build__ = "2026-09-04-historico-conta-pra-tras"   # marcador de versão (aparece no log)
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -404,6 +404,21 @@ def atualizar_historico_bdi(fluxo_dia=None, fluxo_acum_mes=None, oi_pc_mercado=N
         print(f"[bdi_indices] histórico: falha ao ler {cache_abs}: {e}")
     data_ref = data_ref or dt.date.today()
     ds = data_ref.isoformat() if hasattr(data_ref, "isoformat") else str(data_ref)
+
+    # Se a data de referência de HOJE não é mais recente que a última já salva, não há dado
+    # novo de verdade (a B3 ainda não publicou o BDI completo do dia — caiu no fallback pro
+    # mesmo dia de uma execução anterior). Em vez de sobrescrever a entrada mais recente
+    # (arriscando apagar um 'fluxo_dia' que já tinha sido calculado corretamente antes, ou
+    # gravar 'n/d' por cima de um dado bom), simplesmente NÃO MEXE no histórico — ele
+    # continua contando a partir do último dia que realmente teve dado novo, "para trás".
+    datas_existentes = [d["data"] for d in hist if d.get("data")]
+    data_mais_recente = max(datas_existentes) if datas_existentes else None
+    if data_mais_recente is not None and ds <= data_mais_recente:
+        print(f"[bdi_indices] histórico: {ds} não é mais recente que o último dia já salvo "
+              f"({data_mais_recente}) — sem avanço real hoje (BDI ainda incompleto/repetido); "
+              f"histórico mantido como está, contando a partir do último dia disponível.")
+        return hist
+
     campos = {"fluxo_dia": fluxo_dia, "fluxo_acum_mes": fluxo_acum_mes,
              "oi_pc_mercado": oi_pc_mercado, **extras}
     campos = {k: v for k, v in campos.items() if v is not None}

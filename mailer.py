@@ -325,10 +325,24 @@ def _market_block(m: dict, macro: dict = None, opcoes: dict = None) -> str:
                     f'<span class="sub">(fonte: BDI/B3)</span></td></tr>')
     elif fx and fx.get("acum_mes") is not None:
         cor = "#16a34a" if fx["acum_mes"] >= 0 else "#dc2626"
-        rows.append(f'<tr><td><b>Fluxo estrangeiro</b></td>'
-                    f'<td colspan="2">acum. mês <span style="color:{cor}">'
-                    f'R$ {fx["acum_mes"]:+,.0f} mi</span> '
-                    f'<span class="sub">(valor do dia disponível amanhã)</span></td></tr>')
+        fb = fx.get("dia_fallback")
+        if fb and fb.get("valor") is not None:
+            # BDI de hoje ainda incompleto/repetido: mostra o ÚLTIMO dia que teve dado real,
+            # rotulado com a data dele — em vez de 'n/d'. Data vem como 'AAAA-MM-DD' (ISO).
+            partes = str(fb.get("data", "")).split("-")
+            data_txt = f"{partes[2]}/{partes[1]}/{partes[0]}" if len(partes) == 3 else "—"
+            cor_fb = "#16a34a" if fb["valor"] >= 0 else "#dc2626"
+            rows.append(f'<tr><td><b>Fluxo estrangeiro</b></td>'
+                        f'<td colspan="2"><span style="color:{cor_fb}">'
+                        f'R$ {fb["valor"]:+,.0f} mi</span> '
+                        f'<span class="sub">(último dado disp., {data_txt})</span> · '
+                        f'acum. mês <span style="color:{cor}">'
+                        f'R$ {fx["acum_mes"]:+,.0f} mi</span></td></tr>')
+        else:
+            rows.append(f'<tr><td><b>Fluxo estrangeiro</b></td>'
+                        f'<td colspan="2">acum. mês <span style="color:{cor}">'
+                        f'R$ {fx["acum_mes"]:+,.0f} mi</span> '
+                        f'<span class="sub">(valor do dia disponível amanhã)</span></td></tr>')
     else:
         rows.append('<tr><td><b>Fluxo estrangeiro</b></td>'
                     '<td colspan="2">n/d — BDI indisponível hoje</td></tr>')
