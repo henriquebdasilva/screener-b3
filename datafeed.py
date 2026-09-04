@@ -530,10 +530,12 @@ def dividends_no_cut(px, years: int = 5, tol: float = 0.20):
         return None
 
 
-def price_stats(px) -> dict:
+def price_stats(px, selic: float = None) -> dict:
     """Estatísticas técnicas do histórico (~1 ano): mínima/máxima 52s, distância da mínima e
     da média de 100 dias, MEDIANA do preço, DRAWDOWN MÁXIMO (pico->vale), VOLATILIDADE
-    anualizada e RETORNO no ano (YTD) — para contexto de risco por papel."""
+    anualizada e RETORNO no ano (YTD) — para contexto de risco por papel. Também MOMENTUM,
+    Value at Risk, Índice de Sharpe e DESVIO PADRÃO (diário, não anualizado — complementa a
+    volatilidade anualizada já calculada acima com o número "cru")."""
     out = {}
     try:
         close = px["Close"].dropna()
@@ -562,6 +564,36 @@ def price_stats(px) -> dict:
         rets = w.pct_change().dropna()
         out["vol_anual"] = (round(float(rets.std() * (252 ** 0.5) * 100), 1)
                             if len(rets) > 20 else float("nan"))
+        # DESVIO PADRÃO diário dos retornos (%) — o número "cru", sem anualizar (vol_anual
+        # acima já é isso × √252; aqui fica explícito como métrica própria, a pedido).
+        out["desvio_padrao"] = (round(float(rets.std() * 100), 2)
+                                if len(rets) > 20 else float("nan"))
+        # MOMENTUM 12-1: retorno dos últimos 12 meses EXCLUINDO o último mês (~21 pregões) —
+        # definição clássica de fator momentum (Jegadeesh & Titman), evita capturar reversão
+        # de curtíssimo prazo. Usa até 252 pregões (~1 ano); precisa de pelo menos ~11 meses
+        # de histórico (231 pregões) pra fazer sentido.
+        if len(close) >= 231:
+            janela_mom = close.iloc[-252:] if len(close) >= 252 else close
+            preco_fim = float(janela_mom.iloc[-21])         # ~1 mês atrás (exclui o último mês)
+            preco_ini = float(janela_mom.iloc[0])            # início da janela (~12 meses atrás)
+            out["momentum_12_1"] = (round((preco_fim / preco_ini - 1) * 100, 1)
+                                    if preco_ini > 0 else float("nan"))
+        # VALUE AT RISK histórico, 1 dia, 95% de confiança (%) — percentil 5 dos retornos
+        # diários dos últimos ~1 ano. Não assume distribuição normal (usa a distribuição
+        # EMPÍRICA de verdade), mais robusto a caudas gordas que o VaR paramétrico. Negativo
+        # = perda estimada (ex.: -3.2% significa que, historicamente, em 95% dos dias a perda
+        # NÃO passou de 3.2% — e em 5% dos dias, passou).
+        out["var_95"] = (round(float(rets.quantile(0.05) * 100), 2)
+                         if len(rets) > 20 else float("nan"))
+        # ÍNDICE DE SHARPE anualizado: (retorno anualizado - taxa livre de risco) / vol
+        # anualizada. Usa a SELIC como taxa livre de risco (referência padrão no Brasil);
+        # se não vier, cai pro cálculo sem desconto de juros (equivalente a Sharpe c/ taxa=0,
+        # menos correto mas melhor que não calcular nada).
+        if len(rets) > 20 and rets.std() > 0:
+            ret_anual = float(rets.mean() * 252)
+            vol_anual_frac = float(rets.std() * (252 ** 0.5))
+            taxa_livre = (selic / 100.0) if selic is not None else 0.0
+            out["sharpe"] = round((ret_anual - taxa_livre) / vol_anual_frac, 2)
         # retorno da própria ação no ano corrente (YTD, %) — p/ comparar com o Ibovespa
         today = close.index[-1]
         yr = close[close.index.year == today.year]

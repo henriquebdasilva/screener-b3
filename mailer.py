@@ -643,8 +643,9 @@ _IND_METRICS = [
 
 def _stats_table(df: pd.DataFrame) -> str:
     """Tabela de estatísticas anuais por papel: preço atual, retorno no ano (YTD) e vs.
-    Ibovespa, mínima/máxima do ano, drawdown máximo, volatilidade anualizada, média e
-    mediana do preço (1a) e correlação com o Ibovespa e com o dólar."""
+    Ibovespa, mínima/máxima do ano, drawdown máximo, volatilidade anualizada, desvio padrão
+    diário, momentum 12-1, Value at Risk, Índice de Sharpe, média e mediana do preço (1a) e
+    correlação com o Ibovespa e com o dólar."""
     def cell(v, casas=2, sufixo=""):
         if v is None or (isinstance(v, float) and pd.isna(v)):
             return "<td class='r mut'>—</td>"
@@ -661,14 +662,23 @@ def _stats_table(df: pd.DataFrame) -> str:
     head = ("<tr><th>Ativo</th><th class='r'>Preço</th><th class='r'>Retorno no ano</th>"
             "<th class='r'>vs Ibov (ano)</th><th class='r'>Mín (ano)</th>"
             "<th class='r'>Máx (ano)</th><th class='r'>Drawdown máx (1a)</th>"
-            "<th class='r'>Volatilidade (1a)</th><th class='r'>Média (1a)</th>"
-            "<th class='r'>Mediana (1a)</th>"
+            "<th class='r'>Volatilidade (1a)</th><th class='r'>Desv. padrão (dia)</th>"
+            "<th class='r'>Momentum (12-1)</th><th class='r'>VaR 95% (1d)</th>"
+            "<th class='r'>Sharpe</th>"
+            "<th class='r'>Média (1a)</th><th class='r'>Mediana (1a)</th>"
             "<th class='r'>Corr. Ibov</th><th class='r'>Corr. USD</th></tr>")
     linhas = []
     for tk, r in df.iterrows():
         dd = r.get("max_drawdown")
         dd_cell = (f"<td class='r rd'>{float(dd):.1f}%</td>"
                   if pd.notna(dd) else "<td class='r mut'>—</td>")
+        var95 = r.get("var_95")
+        var_cell = (f"<td class='r rd'>{float(var95):+.1f}%</td>"
+                   if pd.notna(var95) else "<td class='r mut'>—</td>")
+        sharpe = r.get("sharpe")
+        sharpe_cell = (f"<td class='r {'g' if float(sharpe) >= 0 else 'rd'}'>"
+                       f"{float(sharpe):+.2f}</td>"
+                       if pd.notna(sharpe) else "<td class='r mut'>—</td>")
         linhas.append(
             f"<tr><td><b>{tk}</b></td>"
             f"{cell(r.get('close'), 2)}"
@@ -678,6 +688,10 @@ def _stats_table(df: pd.DataFrame) -> str:
             f"{cell(r.get('max_ytd'), 2)}"
             f"{dd_cell}"
             f"{cell(r.get('vol_anual'), 1, sufixo='%')}"
+            f"{cell(r.get('desvio_padrao'), 2, sufixo='%')}"
+            f"{pct_sign(r.get('momentum_12_1'))}"
+            f"{var_cell}"
+            f"{sharpe_cell}"
             f"{cell(r.get('media_1a'), 2)}"
             f"{cell(r.get('mediana_1a'), 2)}"
             f"{_num_sign_cell(r.get('corr_ibov'))}"
@@ -689,12 +703,19 @@ def _stats_table(df: pd.DataFrame) -> str:
            'móvel de 12 meses). Drawdown máx = maior queda pico→vale nos últimos ~12 meses, '
            'medida sobre o PREÇO em si (não sobre média/mediana): a maior queda percentual do '
            'preço em relação ao pico mais recente até aquele ponto. Volatilidade = '
-           'desvio-padrão anualizado dos retornos diários (~1 ano). Média e Mediana (1a) = '
-           'preço médio e mediano do último ano (a mediana é mais robusta a picos/mínimas '
-           'pontuais). Corr. Ibov/USD = correlação dos retornos diários (~1 ano) com o '
-           'Ibovespa e com o dólar (USD/BRL): <span style="color:#16a34a">+</span> na mesma '
-           'direção, <span style="color:#dc2626">−</span> na direção oposta — correlação com '
-           'o dólar positiva sugere exportadora/commodity, negativa sugere consumo doméstico/'
+           'desvio-padrão ANUALIZADO dos retornos diários (~1 ano); Desv. padrão (dia) é o '
+           'mesmo número sem anualizar — o "cru". Momentum (12-1) = retorno dos últimos 12 '
+           'meses EXCLUINDO o último mês (fator clássico de momentum — evita capturar reversão '
+           'de curtíssimo prazo). VaR 95% (1d) = Value at Risk histórico de 1 dia: no pior "1 '
+           'em cada 20 dias" (percentil 5 dos retornos diários reais, não assume distribuição '
+           'normal), a perda estimada é essa. Sharpe = (retorno anualizado − Selic) ÷ '
+           'volatilidade anualizada — retorno ajustado ao risco; maior é melhor, negativo '
+           'significa que nem cobriu a taxa livre de risco. Média e Mediana (1a) = preço médio '
+           'e mediano do último ano (a mediana é mais robusta a picos/mínimas pontuais). '
+           'Corr. Ibov/USD = correlação dos retornos diários (~1 ano) com o Ibovespa e com o '
+           'dólar (USD/BRL): <span style="color:#16a34a">+</span> na mesma direção, '
+           '<span style="color:#dc2626">−</span> na direção oposta — correlação com o dólar '
+           'positiva sugere exportadora/commodity, negativa sugere consumo doméstico/'
            'importadora.</p>')
     return f'<h3 style="{_H3}">Estatísticas do ano</h3><table>{head}{"".join(linhas)}</table>{leg}'
 
