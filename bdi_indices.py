@@ -20,7 +20,14 @@ import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-09-04e-filtro-sanidade-delta"   # marcador de versão (aparece no log)
+__build__ = "2026-09-04f-autolimpeza-outlier-existente"   # marcador de versão (aparece no log)
+
+# Limite de sanidade p/ o delta diário do fluxo estrangeiro (R$ mi). A seção 'Participação
+# dos Investidores' do BDI às vezes é revisada pela B3 entre publicações — comparar uma
+# leitura antiga com uma revisada pode gerar um delta sem sentido (já visto: +R$18.927mi
+# num dia, quando o range real observado fica entre ~50 e ~2.600 em módulo). Generoso o
+# bastante pra não cortar movimentos grandes mas reais.
+LIMITE_FLUXO_DIA = 8000.0
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -372,10 +379,9 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
             # pode gerar um delta sem sentido (já vimos +R$18.927mi num dia, quando o normal
             # fica entre ~R$50-2.600mi). Em vez de publicar um número absurdo, descarta e
             # marca como indisponível — nunca inventa/aceita um valor implausível.
-            LIMITE_DIA = 8000.0                   # R$ mi — generoso, mas corta outliers óbvios
-            if abs(delta) > LIMITE_DIA:
+            if abs(delta) > LIMITE_FLUXO_DIA:
                 print(f"[bdi_indices] fluxo estrangeiro: delta de {prev_data} a {data_ref} "
-                      f"veio implausível (R$ {delta:+,.0f} mi, limite ±{LIMITE_DIA:,.0f}) — "
+                      f"veio implausível (R$ {delta:+,.0f} mi, limite ±{LIMITE_FLUXO_DIA:,.0f}) — "
                       f"provável revisão de dados pela B3 entre publicações; descartando o "
                       f"'dia' desta execução (fica indisponível, não inventa).")
             else:
@@ -430,6 +436,18 @@ def atualizar_historico_bdi(fluxo_dia=None, fluxo_acum_mes=None, oi_pc_mercado=N
               f"confira o .gitignore e o passo 'git add reports/' do workflow)")
     except Exception as e:
         print(f"[bdi_indices] histórico: falha ao ler {cache_abs}: {e}")
+
+    # AUTOLIMPEZA: remove qualquer 'fluxo_dia' JÁ GRAVADO que viole o limite de sanidade —
+    # cobre outliers gravados ANTES do filtro existir (o filtro em si só impede que ENTREM
+    # novos; isso aqui limpa o que já estava lá). Não some com o dia inteiro, só some com o
+    # delta suspeito — o acumulado e os outros campos continuam intactos.
+    for d in hist:
+        fd = d.get("fluxo_dia")
+        if fd is not None and abs(fd) > LIMITE_FLUXO_DIA:
+            print(f"[bdi_indices] histórico: autolimpeza — 'fluxo_dia' de {d.get('data')} "
+                  f"(R$ {fd:+,.0f} mi) excede o limite de sanidade (±{LIMITE_FLUXO_DIA:,.0f}) "
+                  f"— removendo esse valor implausível do histórico salvo.")
+            d.pop("fluxo_dia", None)
     data_ref = data_ref or dt.date.today()
     ds = data_ref.isoformat() if hasattr(data_ref, "isoformat") else str(data_ref)
 
@@ -519,6 +537,17 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
             hist_atual = json.load(f).get("dias", [])
     except Exception:
         pass
+
+    # AUTOLIMPEZA (mesma lógica de atualizar_historico_bdi): remove 'fluxo_dia' implausível
+    # já gravado, ANTES de checar a cobertura — assim, se um dia perde o dado por causa
+    # disso, a cobertura já reflete a falta e essa mesma execução pode tentar rebuscar.
+    for d in hist_atual:
+        fd = d.get("fluxo_dia")
+        if fd is not None and abs(fd) > LIMITE_FLUXO_DIA:
+            print(f"[bdi_indices] histórico retroativo: autolimpeza — 'fluxo_dia' de "
+                  f"{d.get('data')} (R$ {fd:+,.0f} mi) excede o limite de sanidade — "
+                  f"removendo esse valor implausível.")
+            d.pop("fluxo_dia", None)
 
     def _cobertura(campo):
         return sum(1 for d in hist_atual if d.get(campo) is not None)
@@ -619,7 +648,6 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
     # 3) monta as entradas: fluxo_dia = diferença entre acumulados CONSECUTIVOS, usando as
     # DATAS REAIS (não as datas de arquivo) pra decidir "mesmo mês" e "é dado novo mesmo" —
     # mas a entrada final fica salva sob a data do ARQUIVO (dia do relatório).
-    LIMITE_DIA_RETRO = 8000.0    # R$ mi — mesmo filtro de sanidade do cálculo diário
     datas_ordenadas = sorted(acumulados.keys())              # datas de ARQUIVO
     novo = {}
     for i, ds in enumerate(datas_ordenadas):
@@ -632,7 +660,7 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
             avancou = data_real_cur > data_real_prev      # evita delta=0 quando a data
             if mesmo_mes and avancou:                      # real repete entre 2 arquivos
                 delta = saldo_cur - saldo_prev
-                if abs(delta) > LIMITE_DIA_RETRO:
+                if abs(delta) > LIMITE_FLUXO_DIA:
                     print(f"[bdi_indices] histórico retroativo: delta de {data_real_prev} a "
                           f"{data_real_cur} implausível (R$ {delta:+,.0f} mi) — descartado "
                           f"(provável revisão de dados pela B3).")
