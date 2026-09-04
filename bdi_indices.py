@@ -20,7 +20,7 @@ import os
 import re
 from urllib.request import Request, urlopen
 
-__build__ = "2026-09-04d-chave-e-dia-do-relatorio"   # marcador de versão (aparece no log)
+__build__ = "2026-09-04e-filtro-sanidade-delta"   # marcador de versão (aparece no log)
 
 
 def _bdi_pdf_url(dataobj, capitulo="02"):
@@ -365,7 +365,21 @@ def fetch_fluxo_estrangeiro(cache_path: str = None) -> dict | None:
         prev_data = dt.date.fromisoformat(prev["data"]) if prev.get("data") else None
         mesmo_mes = prev_data and prev_data.year == data_ref.year and prev_data.month == data_ref.month
         if mesmo_mes and prev_data < data_ref:
-            resultado["dia"] = acc["saldo_acum_mes"] - prev["acum_mes"]
+            delta = acc["saldo_acum_mes"] - prev["acum_mes"]
+            # FILTRO DE SANIDADE: a seção 'Participação dos Investidores' do BDI às vezes é
+            # REVISADA pela B3 depois de publicada (valores de uma mesma data 'até o dia X'
+            # mudam entre publicações) — comparar uma leitura antiga com uma leitura revisada
+            # pode gerar um delta sem sentido (já vimos +R$18.927mi num dia, quando o normal
+            # fica entre ~R$50-2.600mi). Em vez de publicar um número absurdo, descarta e
+            # marca como indisponível — nunca inventa/aceita um valor implausível.
+            LIMITE_DIA = 8000.0                   # R$ mi — generoso, mas corta outliers óbvios
+            if abs(delta) > LIMITE_DIA:
+                print(f"[bdi_indices] fluxo estrangeiro: delta de {prev_data} a {data_ref} "
+                      f"veio implausível (R$ {delta:+,.0f} mi, limite ±{LIMITE_DIA:,.0f}) — "
+                      f"provável revisão de dados pela B3 entre publicações; descartando o "
+                      f"'dia' desta execução (fica indisponível, não inventa).")
+            else:
+                resultado["dia"] = delta
         resultado["mes"] = acc["saldo_acum_mes"]  # acumulado do mês corrente, sempre disponível
 
     # grava o cache para o próximo dia (best-effort; não quebra o fluxo se falhar)
@@ -509,7 +523,8 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
     def _cobertura(campo):
         return sum(1 for d in hist_atual if d.get(campo) is not None)
 
-    cob_fluxo = _cobertura("fluxo_acum_mes")
+    cob_fluxo = _cobertura("fluxo_dia")   # é o "dia" que importa pro gráfico, não o acumulado
+                                          # (que quase sempre está presente, mesmo sem 'dia')
     cob_oi = _cobertura("oi_pc_mercado")
     cob_pcvol = _cobertura("pc_vol_mercado")
     precisa_fluxo = cob_fluxo < janela
@@ -604,6 +619,7 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
     # 3) monta as entradas: fluxo_dia = diferença entre acumulados CONSECUTIVOS, usando as
     # DATAS REAIS (não as datas de arquivo) pra decidir "mesmo mês" e "é dado novo mesmo" —
     # mas a entrada final fica salva sob a data do ARQUIVO (dia do relatório).
+    LIMITE_DIA_RETRO = 8000.0    # R$ mi — mesmo filtro de sanidade do cálculo diário
     datas_ordenadas = sorted(acumulados.keys())              # datas de ARQUIVO
     novo = {}
     for i, ds in enumerate(datas_ordenadas):
@@ -615,7 +631,13 @@ def preencher_historico_retroativo(janela: int = 15, cache_path: str = None,
                         and data_real_prev.month == data_real_cur.month)
             avancou = data_real_cur > data_real_prev      # evita delta=0 quando a data
             if mesmo_mes and avancou:                      # real repete entre 2 arquivos
-                entry["fluxo_dia"] = saldo_cur - saldo_prev
+                delta = saldo_cur - saldo_prev
+                if abs(delta) > LIMITE_DIA_RETRO:
+                    print(f"[bdi_indices] histórico retroativo: delta de {data_real_prev} a "
+                          f"{data_real_cur} implausível (R$ {delta:+,.0f} mi) — descartado "
+                          f"(provável revisão de dados pela B3).")
+                else:
+                    entry["fluxo_dia"] = delta
         novo[ds] = entry
     for ds, pc in ois.items():
         novo.setdefault(ds, {"data": ds})["oi_pc_mercado"] = pc
