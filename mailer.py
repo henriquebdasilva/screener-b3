@@ -212,13 +212,17 @@ def _teto_table(df: pd.DataFrame) -> str:
     head = ("<tr><th>Ativo</th><th>Preço</th><th>Bazin</th><th>Gordon</th><th>DCF</th>"
             "<th>Graham</th><th>Grah.Selic</th><th>Lynch</th><th>Projet.</th>"
             "<th>Múlt.EV</th><th>Média</th><th>Mediana</th>"
-            "<th>Ajust.</th><th>Upside*</th></tr>")
+            "<th>Ajust.</th><th>Upside*</th><th>Cresc. implíc.**</th></tr>")
     rows = []
     for _, r in df.iterrows():
         up = r.get("teto_upside_pct")
         up_s = f"{float(up):+.0f}%" if pd.notna(up) else "—"
+        gi = r.get("g_implicito")
+        gi_s = f"{float(gi):+.1f}%" if pd.notna(gi) else "—"
+        confiavel = r.get("teto_confiavel")
+        marca_conf = " ⚠" if confiavel is False else ""
         rows.append(
-            f"<tr><td><b>{r.name}</b></td><td>{num(r.get('close'))}</td>"
+            f"<tr><td><b>{r.name}</b>{marca_conf}</td><td>{num(r.get('close'))}</td>"
             f"<td>{num(r.get('teto_bazin'))}</td><td>{num(r.get('teto_gordon'))}</td>"
             f"<td>{num(r.get('teto_dcf'))}</td><td>{num(r.get('teto_graham'))}</td>"
             f"<td>{num(r.get('teto_graham_selic'))}</td>"
@@ -226,7 +230,8 @@ def _teto_table(df: pd.DataFrame) -> str:
             f"<td>{num(r.get('teto_mult_ebitda'))}</td>"
             f"<td>{num(r.get('teto_medio'))}</td>"
             f"<td>{num(r.get('teto_mediana'))}</td>"
-            f"<td><b>{num(r.get('teto_ajustado'))}</b></td><td>{up_s}</td></tr>")
+            f"<td><b>{num(r.get('teto_ajustado'))}</b></td><td>{up_s}</td>"
+            f"<td>{gi_s}</td></tr>")
     return f'<div class="ind"><table>{head}{"".join(rows)}</table></div>'
 
 
@@ -290,7 +295,14 @@ _TETO_NOTE = (
     'e Lynch/PEGY — mais a Média e a Mediana. <b>Ajust.</b> = mediana com desconto de '
     'segurança; *Upside calculado sobre o Ajust. Bazin e Gordon usam o DY médio de ~5 anos. '
     'Método muito fora (além de ~2,5× a mediana) é descartado; em bancos/seguros, Graham e '
-    'Lynch também. Estimativas sensíveis às premissas — referência, não gatilho.'
+    'Lynch também. Estimativas sensíveis às premissas — referência, não gatilho. '
+    '<b>⚠</b> junto do ticker = os métodos de teto discordam muito entre si (dispersão alta) '
+    'ou o upside implícito é implausível — trate a faixa com cautela extra. '
+    '**<b>Cresc. implíc.</b> = crescimento (% a.a.) que o PREÇO ATUAL já embute, invertendo a '
+    'fórmula do DCF (reverse DCF) — não é uma previsão nossa, é "quanto a empresa precisa '
+    'crescer pra justificar o preço de hoje", dado o custo de capital usado no modelo. '
+    'Compare com o CAGR histórico da empresa: se o crescimento implícito for bem maior que o '
+    'histórico, o mercado está pagando por uma aceleração que ainda não aconteceu.'
 )
 
 
@@ -666,6 +678,7 @@ def _stats_table(df: pd.DataFrame) -> str:
             "<th class='r'>Momentum (12-1)</th><th class='r'>VaR 95% (1d)</th>"
             "<th class='r'>Sharpe</th>"
             "<th class='r'>Média (1a)</th><th class='r'>Mediana (1a)</th>"
+            "<th class='r'>Faixa 1a (P10–P90)</th>"
             "<th class='r'>Corr. Ibov</th><th class='r'>Corr. USD</th></tr>")
     linhas = []
     for tk, r in df.iterrows():
@@ -679,6 +692,12 @@ def _stats_table(df: pd.DataFrame) -> str:
         sharpe_cell = (f"<td class='r {'g' if float(sharpe) >= 0 else 'rd'}'>"
                        f"{float(sharpe):+.2f}</td>"
                        if pd.notna(sharpe) else "<td class='r mut'>—</td>")
+        p10, p50, p90 = r.get("preco_p10_1a"), r.get("preco_p50_1a"), r.get("preco_p90_1a")
+        if pd.notna(p10) and pd.notna(p90):
+            faixa_cell = (f"<td class='r'>{float(p10):.2f} – {float(p90):.2f} "
+                          f"<span class='sub'>(P50 {float(p50):.2f})</span></td>")
+        else:
+            faixa_cell = "<td class='r mut'>—</td>"
         linhas.append(
             f"<tr><td><b>{tk}</b></td>"
             f"{cell(r.get('close'), 2)}"
@@ -694,6 +713,7 @@ def _stats_table(df: pd.DataFrame) -> str:
             f"{sharpe_cell}"
             f"{cell(r.get('media_1a'), 2)}"
             f"{cell(r.get('mediana_1a'), 2)}"
+            f"{faixa_cell}"
             f"{_num_sign_cell(r.get('corr_ibov'))}"
             f"{_num_sign_cell(r.get('corr_usd'))}</tr>")
     leg = ('<p class="sub" style="margin:4px 0 0">Preço em R$. Retorno no ano e vs Ibov (ano) = '
@@ -712,6 +732,11 @@ def _stats_table(df: pd.DataFrame) -> str:
            'volatilidade anualizada — retorno ajustado ao risco; maior é melhor, negativo '
            'significa que nem cobriu a taxa livre de risco. Média e Mediana (1a) = preço médio '
            'e mediano do último ano (a mediana é mais robusta a picos/mínimas pontuais). '
+           'Faixa 1a (P10–P90) = projeção ESTATÍSTICA (não é previsão) de onde o preço pode '
+           'estar daqui a 1 ano: dado o histórico de retorno médio e volatilidade dos últimos '
+           '~12 meses, projetados de forma lognormal, 80% dos cenários ficam dentro dessa '
+           'faixa (P50 = mediana). Um período recente muito forte ou muito fraco distorce a '
+           'projeção — é referência estatística, não uma previsão de verdade. '
            'Corr. Ibov/USD = correlação dos retornos diários (~1 ano) com o Ibovespa e com o '
            'dólar (USD/BRL): <span style="color:#16a34a">+</span> na mesma direção, '
            '<span style="color:#dc2626">−</span> na direção oposta — correlação com o dólar '
@@ -751,17 +776,24 @@ def _risco_table(df: pd.DataFrame) -> str:
     head = ("<tr><th>Ativo</th><th class='r'>Preço</th>"
             "<th class='r'>Mín 52s</th><th class='r'>Máx 52s</th>"
             "<th class='r'>vs Min52</th>"
-            "<th class='r'>vs MM100</th><th class='r'>Beta</th>"
+            "<th class='r'>vs MM100</th><th class='r'>Liquidez/dia</th><th class='r'>Beta</th>"
             "<th class='r'>P/C opç.</th>"
             "<th class='r'>Aluguel</th><th class='r'>Maior OI</th>"
             "<th class='r'>Mais neg.</th></tr>")
     linhas = []
     for tk, r in df.iterrows():
+        liq = r.get("liquidez_media")
+        if pd.notna(liq):
+            liq_txt = f"R${liq/1e6:.1f}M" if liq >= 1e6 else f"R${liq/1e3:.0f}k"
+            liq_cell = f"<td class='r'>{liq_txt}</td>"
+        else:
+            liq_cell = "<td class='r mut'>—</td>"
         linhas.append(
             f"<tr><td><b>{tk}</b></td>{cell(r.get('close'))}"
             f"{cell(r.get('min_52s'))}{cell(r.get('max_52s'))}"
             f"{cell(r.get('dist_min52'), pct=True, sign=True)}"
             f"{cell(r.get('dist_mm100'), pct=True, sign=True)}"
+            f"{liq_cell}"
             f"{num_sign(r.get('beta'))}"
             f"<td class='r'>{_pc_cell((_PC_ATIVO.get(_raiz_tk(tk)) or {}).get('pc_ratio'))}</td>"
             f"<td class='r'>{_aluguel_cell(tk, r)}</td>"
@@ -770,7 +802,10 @@ def _risco_table(df: pd.DataFrame) -> str:
     leg = ('<p class="sub" style="margin:4px 0 0">Preço, Mín 52s e Máx 52s em R$ (mínima e '
            'máxima de 52 semanas). vs Min52 = distância da mínima de 52 semanas; vs MM100 = '
            'posição vs média de 100 dias. <span style="color:#16a34a">Verde/+</span> acima, '
-           '<span style="color:#dc2626">vermelho/−</span> abaixo. Beta vs Ibovespa (retornos '
+           '<span style="color:#dc2626">vermelho/−</span> abaixo. Liquidez/dia = volume '
+           'financeiro médio negociado por dia (~1 mês, R$) — papel pouco líquido pode ser '
+           'difícil de entrar/sair sem mover o preço, mesmo com bons fundamentos. Beta vs '
+           'Ibovespa (retornos '
            'diários, ~1 ano) — correlação com o Ibovespa e com o dólar estão na tabela '
            '"Estatísticas do ano", logo abaixo. P/C opç. = Put/Call ratio do ativo (volume de '
            'puts ÷ calls no pregão, COTAHIST/B3): <span style="color:#dc2626">≥1,2</span> viés '
@@ -814,8 +849,38 @@ def _ind_table(df: pd.DataFrame) -> str:
            '<span style="color:#16a34a">Verde</span> = melhor que a mediana do setor; '
            '<span style="color:#dc2626">vermelho</span> = pior (payout sem cor por ser '
            'não-monotônico). Alguns campos dependem do balanço (yfinance) e podem vir (—).</p>')
+    # CAGR em janelas decrescentes (5a/3a/1a) + ano atípico — só lista quem tem sinal (evita
+    # poluir a tabela principal com mais colunas; quem não aparece aqui não tem alerta).
+    alertas = []
+    for tk, r in df.iterrows():
+        partes = []
+        if r.get("desacelerando") is True:
+            c5, c3, c1 = r.get("cagr_5a"), r.get("cagr_3a"), r.get("cagr_1a")
+            def _f(v):
+                return f"{float(v):+.1f}%" if pd.notna(v) else "—"
+            partes.append(f"crescimento DESACELERANDO — receita 5a: {_f(c5)}, "
+                          f"3a: {_f(c3)}, 1a: {_f(c1)}")
+        if r.get("anos_atipicos"):
+            partes.append(f"ano(s) com variação atípica (checar manualmente): "
+                          f"{r.get('anos_atipicos')}")
+        if partes:
+            alertas.append(f"<li><b>{tk}</b> — {'; '.join(partes)}</li>")
+    alerta_html = ""
+    if alertas:
+        alerta_html = (
+            '<div style="margin-top:8px;padding:8px 10px;background:#fffbeb;'
+            'border-left:3px solid #f59e0b;border-radius:2px">'
+            '<b style="font-size:11px">⚠ Crescimento e consistência — atenção</b>'
+            '<ul style="margin:4px 0 0;padding-left:18px;font-size:10.5px">'
+            + "".join(alertas) + '</ul>'
+            '<p class="sub" style="margin:4px 0 0">CAGR em janelas decrescentes revela '
+            'desaceleração que uma média de 5 anos sozinha esconde. Ano atípico = variação '
+            'ano-a-ano estatisticamente fora do padrão da série (mediana/MAD) — pode ser '
+            'evento contábil pontual (dividendo extraordinário, recompra, reavaliação), não '
+            'necessariamente um problema; vale conferir a demonstração daquele ano.</p>'
+            '</div>')
     return (f'<h3 style="{_H3}">Indicadores fundamentalistas</h3>'
-            f'<div class="ind"><table>{head}{"".join(linhas)}</table></div>{leg}')
+            f'<div class="ind"><table>{head}{"".join(linhas)}</table></div>{leg}{alerta_html}')
 
 
 def _main_head() -> str:

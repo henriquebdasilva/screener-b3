@@ -13,6 +13,7 @@ Nenhuma fonte é 100%% confiável para todo o universo — o app é defensivo po
 from __future__ import annotations
 
 import math
+import numpy as np
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Optional
@@ -391,12 +392,13 @@ def _row_by_year(st, keys) -> dict:
 
 def get_net_income_history(ticker: str):
     """Best-effort do income statement (uma chamada): retorna
-       (lucro ANUAL, lucro TRIMESTRAL, {ano:LPA}, {ano:EBITDA}, {ano:margem_liq%}).
+       (lucro ANUAL, lucro TRIMESTRAL, {ano:LPA}, {ano:EBITDA}, {ano:margem_liq%}, {ano:receita}).
     Cobertura da B3 é irregular. Desligue com env PROFIT_HISTORY=0."""
     import os
     if os.getenv("PROFIT_HISTORY", "1") == "0":
-        return [], [], {}, {}, {}
+        return [], [], {}, {}, {}, {}
     annual, quarterly, eps_by_year, ebitda_by_year, margem_by_year = [], [], {}, {}, {}
+    receita_by_year = {}
     try:
         import yfinance as yf
         t = yf.Ticker(to_yahoo(ticker))
@@ -414,6 +416,7 @@ def get_net_income_history(ticker: str):
                     ebitda_by_year.update(_row_by_year(st, ("EBITDA", "Normalized EBITDA")))
                     ni_y = _row_by_year(st, ("Net Income", "Net Income Common Stockholders"))
                     rev_y = _row_by_year(st, ("Total Revenue", "Operating Revenue"))
+                    receita_by_year.update(rev_y)            # exposto p/ CAGR em janelas
                     for yr, rev in rev_y.items():           # margem líquida anual (%)
                         if yr in ni_y and rev and rev != 0:
                             margem_by_year[yr] = ni_y[yr] / rev * 100
@@ -421,7 +424,7 @@ def get_net_income_history(ticker: str):
                 pass
     except Exception:
         pass
-    return annual, quarterly, eps_by_year, ebitda_by_year, margem_by_year
+    return annual, quarterly, eps_by_year, ebitda_by_year, margem_by_year, receita_by_year
 
 
 def get_balance_metrics(ticker: str) -> dict:
@@ -482,6 +485,76 @@ def trend_up(by_year: dict, min_years: int = 4, tol: float = 0.0) -> bool:
         return (vals[-1] > vals[0] * (1 + tol)) and (subiu > desceu)
     except Exception:
         return False
+
+
+def cagr_janelas(by_year: dict) -> dict:
+    """CAGR em janelas DECRESCENTES (5a/3a/1a) a partir de uma série por ano — revela
+    desaceleração que uma média longa esconde (uma empresa que cresceu 15%/ano nos últimos
+    5 anos mas só 2%/ano no último pode estar num ponto de inflexão que o CAGR-5a sozinho não
+    mostra). Retorna {'cagr_5a', 'cagr_3a', 'cagr_1a', 'desacelerando'} em % (ou NaN se não
+    houver anos suficientes para aquela janela). 'desacelerando' = True se cada janela mais
+    curta tiver CAGR menor que a mais longa anterior (5a > 3a > 1a) — sinal de alerta."""
+    out = {"cagr_5a": math.nan, "cagr_3a": math.nan, "cagr_1a": math.nan,
+          "desacelerando": None}
+    try:
+        if not by_year:
+            return out
+        anos = sorted(by_year.keys())
+        vals = [by_year[a] for a in anos]
+        n = len(vals)
+
+        def _cagr(v_ini, v_fim, periodos):
+            if v_ini is None or v_fim is None or v_ini <= 0 or v_fim <= 0 or periodos <= 0:
+                return math.nan
+            return (((v_fim / v_ini) ** (1.0 / periodos)) - 1) * 100.0
+
+        if n >= 6:
+            out["cagr_5a"] = round(_cagr(vals[-6], vals[-1], 5), 1)
+        if n >= 4:
+            out["cagr_3a"] = round(_cagr(vals[-4], vals[-1], 3), 1)
+        if n >= 2:
+            out["cagr_1a"] = round(_cagr(vals[-2], vals[-1], 1), 1)
+        janelas = [out["cagr_5a"], out["cagr_3a"], out["cagr_1a"]]
+        validas = [v for v in janelas if pd.notna(v)]
+        if len(validas) >= 2:
+            out["desacelerando"] = all(validas[i] > validas[i + 1]
+                                       for i in range(len(validas) - 1))
+    except Exception:
+        pass
+    return out
+
+
+def ano_atipico(by_year: dict, limiar_z: float = 3.5, limiar_pct: float = 60.0):
+    """Sinaliza o(s) ano(s) cuja variação ano-a-ano foge muito do padrão da série — proxy
+    estatístico de POSSÍVEL distorção contábil (dividendo extraordinário sobre reservas,
+    recompra, mudança de perímetro, reavaliação de ativos) sem ler nenhum release: um ano
+    cuja variação percentual tem um 'modified z-score' (baseado em MEDIANA e MAD — desvio
+    absoluto mediano, mais ROBUSTO que média/desvio-padrão quando a própria série tem só 1-2
+    outliers extremos, que puxariam a média/desvio junto e esconderiam a si mesmos) acima de
+    `limiar_z` E passa de `limiar_pct`% em módulo é sinalizado. Não confirma o motivo — só
+    avisa 'olha esse ano com atenção'. Retorna lista de anos (pode ser vazia) ou None se não
+    houver dados suficientes (não confunda com lista vazia = checou e não achou nada)."""
+    try:
+        if not by_year or len(by_year) < 4:
+            return None
+        anos = sorted(by_year.keys())
+        vals = [by_year[a] for a in anos]
+        variacoes = []
+        for i in range(1, len(vals)):
+            if vals[i - 1] and vals[i - 1] != 0:
+                variacoes.append((anos[i], (vals[i] / vals[i - 1] - 1) * 100.0))
+        if len(variacoes) < 3:
+            return None
+        pcts = np.array([v for _, v in variacoes])
+        mediana = float(np.median(pcts))
+        mad = float(np.median(np.abs(pcts - mediana)))
+        if mad == 0:
+            return []
+        atipicos = [ano for (ano, v) in variacoes
+                   if (0.6745 * abs(v - mediana) / mad) > limiar_z and abs(v) > limiar_pct]
+        return atipicos
+    except Exception:
+        return None
 
 
 def avg_payout(eps_by_year: dict, px, years: int = 5):
@@ -604,6 +677,25 @@ def price_stats(px, selic: float = None) -> dict:
         if len(yr):
             out["min_ytd"] = round(float(yr.min()), 2)
             out["max_ytd"] = round(float(yr.max()), 2)
+        # LIQUIDEZ MÉDIA DIÁRIA (R$) — volume financeiro médio dos últimos ~21 pregões (1 mês).
+        # Ajuda a avaliar risco de execução: papel pouco líquido pode ser difícil de entrar/
+        # sair sem mover o preço, mesmo que os fundamentos sejam bons.
+        if "Volume" in px.columns:
+            vol_fin = (px["Volume"] * px["Close"]).dropna()
+            if len(vol_fin) >= 5:
+                out["liquidez_media"] = round(float(vol_fin.iloc[-21:].mean()), 0)
+        # FAIXA DE PREÇO PROBABILÍSTICA (1 ano, P10/P50/P90) — projeção analítica lognormal
+        # (sem Monte Carlo: fechada, a partir da média e do desvio-padrão dos retornos LOG
+        # diários dos últimos ~1 ano). P50 usa a deriva histórica (pode ser otimista se o
+        # período recente foi excepcional — é uma referência estatística, não uma previsão).
+        log_rets = np.log(w / w.shift(1)).dropna() if len(w) > 1 else pd.Series(dtype=float)
+        if len(log_rets) > 40:
+            mu_log_anual = float(log_rets.mean() * 252)
+            sigma_anual = float(log_rets.std() * (252 ** 0.5))
+            Z10, Z90 = -1.2816, 1.2816              # percentis 10 e 90 da normal padrão
+            out["preco_p10_1a"] = round(c * math.exp(mu_log_anual + Z10 * sigma_anual), 2)
+            out["preco_p50_1a"] = round(c * math.exp(mu_log_anual), 2)
+            out["preco_p90_1a"] = round(c * math.exp(mu_log_anual + Z90 * sigma_anual), 2)
     except Exception:
         pass
     return out

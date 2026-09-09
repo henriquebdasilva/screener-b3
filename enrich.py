@@ -98,7 +98,7 @@ def get_events(ticker: str) -> dict:
 
 # ----------------- TESE POR IA (Gemini) -----------------
 _PROMPT = """Você é um analista fundamentalista sênior escrevendo em português do Brasil.
-Escreva uma análise de investimento fluida e bem desenvolvida, de 8 a 10 frases, sobre o
+Escreva uma análise de investimento fluida e bem desenvolvida, de 9 a 11 frases, sobre o
 papel {ticker}, baseada SOMENTE nos dados fornecidos no fim.
 
 Correlacione os indicadores (não os liste): posicione cada número relevante frente à média
@@ -107,7 +107,19 @@ qualidade × preço (ROE/ROIC altos convivem com P/L e P/VP baixos?), rentabilid
 endividamento e dividendo × sustentabilidade (o DY é coerente com lucro, payout e dívida?);
 comente o crescimento (CAGR vs setor) e o que o checklist de critérios revela; trate a faixa
 de preço-teto (métodos, média/mediana e upside) como referência de valuation, apontando
-dispersão entre os métodos. Encerre com um balanço claro de prós e contras.
+dispersão entre os métodos. Se o dado de CAGR por janela vier marcado como DESACELERANDO,
+comente isso explicitamente — é um sinal de alerta que uma média de 5 anos sozinha esconde.
+Se houver crescimento implícito no preço, diga se parece um patamar conservador ou exigente
+frente ao histórico de crescimento da empresa. Se houver anos com variação atípica, mencione
+que aquele(s) ano(s) merece(m) checagem manual (pode ser evento contábil pontual, não
+necessariamente um problema). Encerre com um balanço claro de prós e contras.
+
+Depois do balanço de prós e contras, escreva UMA frase final, começando com "Gatilho de
+falseamento:", com UM evento CONCRETO, OBSERVÁVEL e com NÚMERO que, se acontecer, provaria
+que a leitura acima estava errada — algo verificável num próximo resultado trimestral ou
+anual (ex.: "margem líquida abaixo de X% no próximo trimestre" ou "ROIC abaixo de Y% no
+fechamento anual"). Não invente um número não sugerido pelos dados fornecidos — ancore o
+gatilho num patamar próximo ao já observado no papel ou no setor.
 
 Restrições: não recomende comprar, vender ou manter; não invente fatos, notícias, datas ou
 preço-alvo além dos dados; "média do setor" é a dos pares deste screener (amostra limitada).
@@ -164,6 +176,13 @@ def _fmt_metrics(r: pd.Series) -> str:
     add("Dív/Patrimônio", _v(r.get("div_patrim")))
     add("Liquidez corrente", _v(r.get("liq_corr")))
     add("CAGR receita 5a", _cmp(r.get("cresc_5a"), r.get("cagr_setor_med"), "%"))
+    # CAGR em janelas decrescentes — desaceleração que o CAGR-5a sozinho não revela
+    if _v(r.get("cagr_5a")) is not None or _v(r.get("cagr_1a")) is not None:
+        add("CAGR receita por janela", f"5a: {_v(r.get('cagr_5a'),1)}% | 3a: "
+            f"{_v(r.get('cagr_3a'),1)}% | 1a: {_v(r.get('cagr_1a'),1)}%"
+            f"{' (DESACELERANDO)' if r.get('desacelerando') is True else ''}")
+    if r.get("anos_atipicos"):
+        add("Anos com variação atípica (possível evento extraordinário)", r.get("anos_atipicos"))
     add("DY", None if _v(r.get("dy")) is None else f"{_v(r.get('dy'))}%")
     add("Market cap (R$)", _v(r.get("market_cap"), 0))
     # checklist item a item
@@ -185,6 +204,13 @@ def _fmt_metrics(r: pd.Series) -> str:
         f"{_v(r.get('teto_medio'))} | Mediana {_v(r.get('teto_mediana'))} | Ajustado "
         f"(c/ margem de segurança) {_v(r.get('teto_ajustado'))} | Upside vs ajustado "
         f"{_v(r.get('teto_upside_pct'),1)}%")
+    if _v(r.get("g_implicito")) is not None:
+        add("Crescimento implícito no preço atual (reverse DCF)",
+            f"{_v(r.get('g_implicito'),1)}% ao ano — é o crescimento que o preço de hoje já "
+            f"está pagando, dado o custo de capital usado no modelo")
+    if r.get("teto_confiavel") is False:
+        add("ALERTA de valuation", "os métodos de preço-teto discordam muito entre si "
+            "(dispersão alta) — trate a faixa de preço-teto com cautela extra")
     add("Próximo resultado", None if str(r.get("prox_resultado") or "n/d") == "n/d"
         else r.get("prox_resultado"))
     add("Ex-dividendo", None if str(r.get("ex_dividendo") or "n/d") == "n/d" else

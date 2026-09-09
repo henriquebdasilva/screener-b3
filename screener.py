@@ -147,10 +147,11 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
         except Exception:
             insider[tk] = None
         try:
-            ni_a, ni_q, eps_year, ebitda_year, margem_year = get_net_income_history(tk)
+            ni_a, ni_q, eps_year, ebitda_year, margem_year, receita_year = get_net_income_history(tk)
             profit_hist[tk] = (ni_a, ni_q)
             payout_med[tk] = avg_payout(eps_year, px)           # payout médio (5a), best-effort
-            growth_hist[tk] = {"ebitda": ebitda_year, "margem": margem_year}
+            growth_hist[tk] = {"ebitda": ebitda_year, "margem": margem_year,
+                               "receita": receita_year}
         except Exception:
             profit_hist[tk] = ([], [])
             growth_hist[tk] = {}
@@ -222,7 +223,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     # métricas técnicas / de risco por papel
     for _c in ("min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
               "mediana_1a", "media_1a", "max_drawdown", "vol_anual", "ret_ytd", "min_ytd", "max_ytd",
-              "desvio_padrao", "momentum_12_1", "var_95", "sharpe"):
+              "desvio_padrao", "momentum_12_1", "var_95", "sharpe",
+              "liquidez_media", "preco_p10_1a", "preco_p50_1a", "preco_p90_1a"):
         df[_c] = [pstats.get(t, {}).get(_c, float("nan")) for t in df.index]
     df["beta"] = [risco.get(t, {}).get("beta", float("nan")) for t in df.index]
     df["corr_ibov"] = [risco.get(t, {}).get("corr_ibov", float("nan")) for t in df.index]
@@ -300,6 +302,7 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                          if pd.notna(cc.dispersao) else None,
                          "teto_upside_pct": cc.upside_pct,
                          "teto_upside_media_pct": cc.upside_media_pct,
+                         "g_implicito": round(cc.g_implicito, 1) if pd.notna(cc.g_implicito) else None,
                          "dy_teto": round(dy_ceil, 2) if pd.notna(dy_ceil) else None}
     df = df.join(pd.DataFrame(chk_rows).T).join(pd.DataFrame(ceil_rows).T)
 
@@ -350,7 +353,10 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
 
     # ---- Consistência (8 critérios) e mescla na nota ----
     from criteria import consistency as _consistency
+    from datafeed import cagr_janelas, ano_atipico
     cons_rows = {}
+    cagr_rows = {}
+    atipico_rows = {}
     for tk in df.index:
         ni = profit_hist.get(tk, ([], []))
         gh = growth_hist.get(tk, {})
@@ -361,7 +367,20 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                            roe_by_year=gh.get("roe"), patrimonio_by_year=gh.get("patrimonio"),
                            lucro_by_year=gh.get("lucro"))
         cons_rows[tk] = cc2.as_dict()
+        # CAGR em janelas decrescentes (receita) — revela desaceleração que o CAGR-5a sozinho
+        # esconde; detecção de ano atípico nas principais séries (receita/EBITDA/lucro/
+        # patrimônio) — proxy estatístico de possível evento contábil extraordinário.
+        cagr_rows[tk] = cagr_janelas(gh.get("receita"))
+        atipicos = set()
+        for serie in ("receita", "ebitda", "lucro", "patrimonio"):
+            r = ano_atipico(gh.get(serie))
+            if r:
+                atipicos.update(r)
+        atipico_rows[tk] = sorted(atipicos) if atipicos else None
     df = df.join(pd.DataFrame(cons_rows).T.rename(columns={"score": "consistencia"}))
+    df = df.join(pd.DataFrame(cagr_rows).T)
+    df["anos_atipicos"] = pd.Series({tk: (", ".join(str(a) for a in v) if v else None)
+                                     for tk, v in atipico_rows.items()})
     df["investment_base"] = df["investment"]
     wc = float(consistency_weight)
     cons = pd.to_numeric(df["consistencia"], errors="coerce")
@@ -586,6 +605,9 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             "min_52s", "max_52s", "dist_min52", "dist_max52", "dist_mm100",
             "mediana_1a", "media_1a", "max_drawdown", "vol_anual", "ret_ytd", "min_ytd", "max_ytd", "rel_ibov_ytd",
             "desvio_padrao", "momentum_12_1", "var_95", "sharpe",
+            "liquidez_media", "preco_p10_1a", "preco_p50_1a", "preco_p90_1a",
+            "g_implicito", "teto_dispersao", "teto_confiavel", "teto_n_metodos",
+            "cagr_5a", "cagr_3a", "cagr_1a", "desacelerando", "anos_atipicos",
             "beta", "corr_ibov", "corr_usd", "close",
             "div_ge5_5a", "divo_qualidade_ok", "auvp_ok",
             "teto_bazin", "teto_gordon",

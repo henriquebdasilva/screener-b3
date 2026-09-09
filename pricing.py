@@ -76,6 +76,7 @@ class Ceilings:
     dispersao: float = math.nan         # max/min dos métodos (antes do descarte de outlier)
     k: float = math.nan
     g: float = math.nan
+    g_implicito: float = math.nan       # crescimento que o PREÇO ATUAL embute (reverse DCF)
 
     def as_dict(self):
         return asdict(self)
@@ -115,6 +116,15 @@ def compute_ceilings(price: float, pl: float, pvp: float, dy_pct: float,
     c.k, c.g = k, g
     byield = bazin_yield if (bazin_yield and bazin_yield > 0) else (selic_pct / 100.0)
     c.bazin_yield = byield
+
+    # CRESCIMENTO IMPLÍCITO (reverse DCF leve): invertendo a mesma fórmula do DCF (preço =
+    # LPA×(1+g)/(k−g)), resolve pra g dado o PREÇO ATUAL — "que crescimento o mercado está
+    # pagando por essa ação, hoje?". g alto = mercado otimista (ação cara se não entregar);
+    # g baixo/negativo = mercado cético (ação já "descontou o pior"). Só faz sentido com LPA
+    # positivo (empresa com prejuízo não tem um "preço justificado por crescimento" nesse
+    # sentido).
+    if _pos(lpa):
+        c.g_implicito = ((price * k - lpa) / (price + lpa)) * 100.0
 
     if _pos(dpa):
         c.bazin = dpa / byield
