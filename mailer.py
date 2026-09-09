@@ -860,9 +860,13 @@ def _ind_table(df: pd.DataFrame) -> str:
                 return f"{float(v):+.1f}%" if pd.notna(v) else "—"
             partes.append(f"crescimento DESACELERANDO — receita 5a: {_f(c5)}, "
                           f"3a: {_f(c3)}, 1a: {_f(c1)}")
-        if r.get("anos_atipicos"):
+        anos_atip = r.get("anos_atipicos")
+        # cuidado: NaN (float) é "truthy" em Python (`if float('nan'):` dá True!) — checar só
+        # `if anos_atip:` deixava passar NaN e imprimia o texto "nan" pra papel nenhum com ano
+        # atípico de verdade. Precisa checar null explicitamente (pd.notna) ANTES.
+        if anos_atip is not None and pd.notna(anos_atip) and str(anos_atip).strip():
             partes.append(f"ano(s) com variação atípica (checar manualmente): "
-                          f"{r.get('anos_atipicos')}")
+                          f"{anos_atip}")
         if partes:
             alertas.append(f"<li><b>{tk}</b> — {'; '.join(partes)}</li>")
     alerta_html = ""

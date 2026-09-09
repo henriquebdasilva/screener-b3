@@ -381,6 +381,15 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
     df = df.join(pd.DataFrame(cagr_rows).T)
     df["anos_atipicos"] = pd.Series({tk: (", ".join(str(a) for a in v) if v else None)
                                      for tk, v in atipico_rows.items()})
+    # blindagem: a atribuição acima pode reindexar e introduzir NaN (float) em vez de None
+    # pra linhas sem correspondência exata — e NaN é "truthy" em Python (`if float('nan'):`
+    # dá True!), o que já causou um bug real (texto "nan" aparecendo como se fosse um ano
+    # atípico de verdade). Normaliza explicitamente pra None. IMPORTANTE: no pandas 3.x, a
+    # coluna vira dtype 'str' dedicado (não 'object' genérico) — atribuir None direto nesse
+    # dtype REINTRODUZ NaN silenciosamente (testado); precisa forçar astype(object) ANTES do
+    # where pra None realmente "grudar".
+    col = df["anos_atipicos"].astype(object)
+    df["anos_atipicos"] = col.where(col.notna(), None)
     df["investment_base"] = df["investment"]
     wc = float(consistency_weight)
     cons = pd.to_numeric(df["consistencia"], errors="coerce")
