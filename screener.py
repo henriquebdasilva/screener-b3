@@ -169,6 +169,10 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
             roe_year = {yr: (ni_y[yr] / eq[yr] * 100) for yr in eq
                         if yr in ni_y and eq[yr] and eq[yr] > 0}
             growth_hist.setdefault(tk, {})["roe"] = roe_year
+            # patrimônio (equity) e lucro por ano, prontos p/ o critério de tendência
+            # (crescimento consistente ao longo de 5 anos) em criteria.py
+            growth_hist.setdefault(tk, {})["patrimonio"] = eq
+            growth_hist.setdefault(tk, {})["lucro"] = ni_y
             # ROE médio dos últimos anos (>=2 anos) — usado no corte de qualidade
             _vals = list(roe_year.values())
             roe_med[tk] = (sum(_vals) / len(_vals)) if len(_vals) >= 2 else float("nan")
@@ -354,7 +358,8 @@ def run(universe="both", top_quantile=0.5, min_invest=None, lookback=20,
                            ni[0], ni[1], is_financial=fin_map.get(tk, False),
                            div_no_cut=div_nocut.get(tk),
                            ebitda_by_year=gh.get("ebitda"), margem_by_year=gh.get("margem"),
-                           roe_by_year=gh.get("roe"))
+                           roe_by_year=gh.get("roe"), patrimonio_by_year=gh.get("patrimonio"),
+                           lucro_by_year=gh.get("lucro"))
         cons_rows[tk] = cc2.as_dict()
     df = df.join(pd.DataFrame(cons_rows).T.rename(columns={"score": "consistencia"}))
     df["investment_base"] = df["investment"]
